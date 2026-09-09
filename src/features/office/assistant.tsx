@@ -4,15 +4,18 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { officeApi, errorText } from './api'
+import { RoleAction } from './business'
 import { ErrorNotice, RunContent, Section, Status } from './shared'
-import type {
-  Action,
-  History,
-  ModelConfig,
-  Role,
-  Run,
-  Snapshot,
-  Source,
+import {
+  roleNames,
+  type Action,
+  type History,
+  type ModelConfig,
+  type Role,
+  type Run,
+  type Snapshot,
+  type Source,
+  type Task,
 } from './types'
 
 const prompts = [
@@ -30,8 +33,11 @@ type Props = {
   setQuestion: (question: string) => void
   refresh: () => Promise<void>
   openSource: (source: Source) => void
-  propose: (action: Action) => void
+  propose: (action: Action, expectedVersion?: number) => void
   openSettings: () => void
+  giveReceipt: (task: Task) => void
+  viewMatter: () => void
+  actionBusy: boolean
 }
 export function Assistant({
   role,
@@ -44,6 +50,9 @@ export function Assistant({
   openSource,
   propose,
   openSettings,
+  giveReceipt,
+  viewMatter,
+  actionBusy,
 }: Props) {
   const [busy, setBusy] = useState(false)
   const lock = useRef(false)
@@ -51,8 +60,18 @@ export function Assistant({
   const [run, setRun] = useState<Run | null>(null)
   const [historical, setHistorical] = useState(false)
   const [failedQuestion, setFailedQuestion] = useState('')
+  const [snapshotReady, setSnapshotReady] = useState(false)
   const { state, analysis } = snapshot
   const stale = !!run && run.revision !== state.revision
+  const canContinue =
+    !!run &&
+    run.status === 'completed' &&
+    run.role === role &&
+    !historical &&
+    !stale &&
+    snapshotReady &&
+    !error
+  const prepare = (action: Action) => propose(action, run?.revision)
 
   async function submit(input = question) {
     const requested = input.trim()
@@ -61,6 +80,7 @@ export function Assistant({
     setBusy(true)
     setError('')
     setFailedQuestion('')
+    setSnapshotReady(false)
     setRun(null)
     setHistorical(false)
     try {
@@ -71,6 +91,7 @@ export function Assistant({
       setRun(result.run)
       if (result.run.status === 'failed') setFailedQuestion(requested)
       await refresh()
+      setSnapshotReady(true)
     } catch (failure) {
       setError(errorText(failure))
       setFailedQuestion(requested)
@@ -88,6 +109,11 @@ export function Assistant({
           aside={<Badge variant='outline'>{state.matter.id}</Badge>}
         >
           <div className='space-y-4'>
+            <p className='text-sm leading-6 text-muted-foreground'>
+              {state.matter.title} · {roleNames[role]} · 数据 v{state.revision}
+              <br />
+              {analysis.nextStep}
+            </p>
             <div className='flex flex-wrap gap-2'>
               {prompts.map(([label, text]) => (
                 <Button
@@ -169,13 +195,7 @@ export function Assistant({
               run={run}
               openSource={openSource}
               propose={
-                !historical &&
-                !stale &&
-                run.role === role &&
-                run.status === 'completed' &&
-                !busy
-                  ? propose
-                  : undefined
+                canContinue && !busy && !actionBusy ? prepare : undefined
               }
             />
           </Section>
@@ -204,7 +224,47 @@ export function Assistant({
           </div>
         )}
       </div>
-      <div className='min-w-0 space-y-5'>
+      <div className='min-w-0 space-y-5 xl:sticky xl:top-20'>
+        {(run || failedQuestion) && !busy && (
+          <div role='region' aria-label='下一步处理'>
+            {canContinue ? (
+              <RoleAction
+                title='下一步处理'
+                snapshot={snapshot}
+                role={role}
+                busy={actionBusy}
+                propose={prepare}
+                giveReceipt={giveReceipt}
+                viewMatter={viewMatter}
+              />
+            ) : (
+              <Section title='下一步处理'>
+                <div className='space-y-4 text-sm'>
+                  <p className='leading-6 text-muted-foreground'>
+                    {stale || historical
+                      ? '这份回答是历史依据。请重新查询核对最新情况，或进入事项查看当前任务。'
+                      : '本次查询或状态更新未完成。可重试原问题，或进入事项核对现有任务。'}
+                  </p>
+                  <Button
+                    variant='outline'
+                    disabled={actionBusy}
+                    onClick={viewMatter}
+                  >
+                    查看事项与任务
+                  </Button>
+                  {(stale || historical) && run && (
+                    <Button
+                      disabled={actionBusy}
+                      onClick={() => void submit(run.question)}
+                    >
+                      重新查询最新情况
+                    </Button>
+                  )}
+                </div>
+              </Section>
+            )}
+          </div>
+        )}
         <Section
           title='当前事项'
           aside={<Status value={state.matter.status} />}

@@ -103,6 +103,8 @@ export function OfficeApp() {
   const [qualityResult, setQualityResult] = useState('approved')
   const confirmKey = useRef('')
   const operationLock = useRef(false)
+  const returnToMatter = useRef(false)
+  const receiptVersion = useRef<number | undefined>(undefined)
   const receiptDraft = useRef<{ task: Task; evidence: string; result: string } | null>(null)
 
   useEffect(() => {
@@ -189,9 +191,10 @@ export function OfficeApp() {
       setLoading(false)
     }
   }
-  async function propose(action: Action) {
+  async function propose(action: Action, expectedVersion?: number) {
     if (operationLock.current) return
     operationLock.current = true
+    returnToMatter.current = page === 'assistant'
     setActionBusy(true)
     setError('')
     setConfirmError('')
@@ -199,6 +202,7 @@ export function OfficeApp() {
     try {
       const response = await officeApi<{ preview: Preview }>('/preview', role, {
         action,
+        expectedVersion,
       })
       confirmKey.current = crypto.randomUUID()
       if (roleRef.current !== role) return
@@ -210,12 +214,16 @@ export function OfficeApp() {
         })
         setSnapshot(next)
         setNotice('已开始处理。')
+        if (returnToMatter.current) navigate('matter')
         await refresh()
       } else {
         setPreview(response.preview)
       }
     } catch (failure) {
       setError(errorText(failure))
+      if (failure instanceof OfficeError && failure.code === 'STALE_VERSION') {
+        try { await refresh() } catch { /* Preserve the original conflict. */ }
+      }
       if (['submit_quality', 'submit_receipt'].includes(action.type) && receiptDraft.current) {
         setReceiptTask(receiptDraft.current.task)
       }
@@ -239,7 +247,8 @@ export function OfficeApp() {
       setPreview(null)
       setReceiptTask(null)
       receiptDraft.current = null
-      setNotice('已保存，当前事项和待办已更新。')
+      setNotice(`已保存。${next.analysis.nextStep}`)
+      if (returnToMatter.current) navigate('matter')
       await refresh()
     } catch (failure) {
       setConfirmError(errorText(failure))
@@ -254,11 +263,12 @@ export function OfficeApp() {
     }
   }
   const giveReceipt = useCallback((task: Task) => {
+    receiptVersion.current = snapshot?.state.revision
     setReceiptTask(task)
     const draft = receiptDraft.current?.task.id === task.id ? receiptDraft.current : null
     setEvidence(draft?.evidence || '')
     setQualityResult(draft?.result || 'approved')
-  }, [])
+  }, [snapshot?.state.revision])
   function receiptPreview() {
     if (!receiptTask || !evidence.trim()) return
     const action: Action =
@@ -275,7 +285,7 @@ export function OfficeApp() {
             evidence: evidence.trim(),
           }
     setReceiptTask(null)
-    void propose(action)
+    void propose(action, receiptVersion.current)
   }
   const currentPage = pages.find((item) => item.id === page)!
   const businessProps = {
@@ -405,7 +415,7 @@ export function OfficeApp() {
             {page === 'matter' && <Matter snapshot={snapshot} {...businessProps} />}
             {page === 'assistant' && (
               <Assistant
-                key={`${role}:${config?.mode}`}
+                key={`${snapshot.workspaceId}:${snapshot.state.matter.id}:${role}:${config?.mode}`}
                 role={role}
                 snapshot={snapshot}
                 config={config}
@@ -414,8 +424,11 @@ export function OfficeApp() {
                 setQuestion={setQuestion}
                 refresh={refresh}
                 openSource={openSource}
-                propose={(action) => void propose(action)}
+                propose={(action, expectedVersion) => void propose(action, expectedVersion)}
                 openSettings={() => navigate('settings')}
+                giveReceipt={giveReceipt}
+                viewMatter={() => navigate('matter')}
+                actionBusy={actionBusy || loading}
               />
             )}
             {page === 'settings' && (

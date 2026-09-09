@@ -275,7 +275,12 @@ export function BusinessActions({
     )
   return null
 }
-function RoleAction(props: BusinessProps) {
+export function RoleAction(
+  props: Pick<
+    BusinessProps,
+    'snapshot' | 'role' | 'busy' | 'propose' | 'giveReceipt'
+  > & { title?: string; viewMatter?: () => void }
+) {
   const { state, analysis } = props.snapshot
   const current = situation(props.snapshot)
   const closed = state.matter.status === 'closed'
@@ -289,7 +294,7 @@ function RoleAction(props: BusinessProps) {
   const actionTask = own && !own.receipt ? own : failed
   return (
     <Section
-      title='我的下一步'
+      title={props.title || '我的下一步'}
       aside={<Badge variant='outline'>{roleNames[props.role]}</Badge>}
     >
       <div className='space-y-4'>
@@ -334,6 +339,23 @@ function RoleAction(props: BusinessProps) {
             </p>
             <BusinessActions {...props} />
           </>
+        )}
+        {props.viewMatter && (
+          <div>
+            <Button
+              variant='outline'
+              disabled={props.busy}
+              onClick={props.viewMatter}
+            >
+              {closed
+                ? '查看处理记录'
+                : state.tasks.some((task) => task.id === 'T-QA') &&
+                    state.matter.supplierId === 'A'
+                  ? '查看核验任务'
+                  : '查看事项与任务'}
+              <ArrowRight className='size-4' />
+            </Button>
+          </div>
         )}
         {own && <Receipt task={own} />}
         {!closed &&
@@ -678,7 +700,9 @@ export function Matter(props: BusinessProps) {
     <div className='space-y-6'>
       <div className='flex flex-wrap items-center justify-between gap-3 border-b pb-4'>
         <div className='flex flex-wrap items-center gap-3'>
-          <h2 className='text-xl font-semibold tracking-tight'>供应商交期变更</h2>
+          <h2 className='text-xl font-semibold tracking-tight'>
+            供应商交期变更
+          </h2>
           <span className='font-mono text-sm text-muted-foreground'>
             {state.matter.id}
           </span>
@@ -750,7 +774,7 @@ export function Matter(props: BusinessProps) {
             </div>
           </div>
         </Section>
-        <RoleAction {...props} />
+        <RoleAction {...props} viewMatter={undefined} />
       </div>
       <Section
         title='任务与回执'

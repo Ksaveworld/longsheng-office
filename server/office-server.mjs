@@ -128,6 +128,10 @@ export function createOfficeServer({ dbPath = resolve(root, '.office-data/office
       }
       if (route === 'POST /preview') {
         if (!body.action || typeof body.action.type !== 'string') fail(422, 'INVALID_ACTION', '请选择操作。')
+        if (body.expectedVersion !== undefined) {
+          if (!Number.isInteger(body.expectedVersion)) fail(422, 'INVALID_VERSION', '请提供有效的数据版本。')
+          if (body.expectedVersion !== space.state.revision) fail(409, 'STALE_VERSION', '事项已更新，请重新查询或核对最新任务后再操作。')
+        }
         const preview = { ...previewAction(space.state, body.action, role), id: randomUUID(), role }
         db.prepare('DELETE FROM previews WHERE expires<?').run(Date.now())
         db.prepare('INSERT INTO previews(id,space,body,expires) VALUES(?,?,?,?)').run(preview.id, space.id, JSON.stringify(preview), Date.now() + 600000)
