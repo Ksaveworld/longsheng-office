@@ -1,0 +1,22 @@
+.office-graph-workbench { min-width: 0; }
+.office-graph-workbench:fullscreen { padding: 24px; overflow: auto; background: var(--background); }
+.office-graph-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; align-items: start; }
+.office-graph-catalog { max-height: 190px; overflow: auto; }
+.office-graph-stage { height: 450px; }
+.office-graph-detail { max-height: 600px; overflow: auto; overflow-wrap: anywhere; }
+.office-graph-workbench .ls-relationship-graph { border-color: var(--border); border-radius: 8px; }
+@media (min-width: 768px) {
+  .office-graph-layout { grid-template-columns: 190px minmax(0, 1fr); }
+  .office-graph-stage { height: 560px; }
+  .office-graph-catalog { max-height: 390px; }
+  .office-graph-directory { min-height: 560px; }
+  .office-graph-detail { grid-column: 1 / -1; }
+}
+@media (min-width: 1280px) {
+  .office-graph-layout { grid-template-columns: 185px minmax(0, 1fr) 240px; }
+  .office-graph-detail { grid-column: auto; height: 560px; }
+}
+@media (max-width: 420px) {
+  .office-graph-stage { height: 410px; }
+  .office-graph-workbench:fullscreen { padding: 12px; }
+}

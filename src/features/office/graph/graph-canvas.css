@@ -1,0 +1,136 @@
+/* Migrated from C:/Users/k/Documents/dataos/prototype/src/styles.css, graph section.
+   All selectors belong to this leaf canvas; original global .graph-* classes are not reused. */
+.ls-relationship-graph {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 360px;
+  height: 100%;
+  overflow: hidden;
+  border: 1px solid #dedede;
+  border-radius: 6px;
+  background: #fff;
+  color: #252525;
+  font-family: inherit;
+}
+.ls-relationship-graph .ls-graph-toolbar {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 54px;
+  padding: 9px 12px;
+  border-bottom: 1px solid #e7e7e7;
+}
+.ls-relationship-graph .ls-graph-heading { display: grid; gap: 3px; min-width: 0; }
+.ls-relationship-graph .ls-graph-heading strong { color: #262626; font-size: 12px; font-weight: 650; }
+.ls-relationship-graph .ls-graph-heading span { color: #828282; font-size: 10px; white-space: nowrap; }
+.ls-relationship-graph .ls-graph-controls { display: flex; flex-shrink: 0; align-items: center; gap: 4px; }
+.ls-relationship-graph .ls-graph-controls button {
+  display: inline-flex;
+  min-width: 30px;
+  min-height: 30px;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 5px 7px;
+  border: 1px solid #dedede;
+  border-radius: 4px;
+  color: #555;
+  background: #fff;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.ls-relationship-graph .ls-graph-controls button:hover:not(:disabled) { border-color: #999; color: #171717; background: #f6f6f6; }
+.ls-relationship-graph .ls-graph-controls button:disabled { opacity: .35; cursor: default; }
+.ls-relationship-graph .ls-graph-controls button:focus-visible { outline: 2px solid #333; outline-offset: 2px; }
+.ls-relationship-graph .ls-graph-controls output { min-width: 40px; color: #686868; font-size: 10px; font-variant-numeric: tabular-nums; text-align: center; }
+.ls-relationship-graph .ls-graph-viewport { position: relative; flex: 1 1 auto; min-width: 0; min-height: 300px; }
+.ls-relationship-graph .ls-graph-canvas {
+  display: block;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 300px;
+  overflow: hidden;
+  background-color: #fcfcfc;
+  background-image: radial-gradient(#dedede .65px, transparent .65px);
+  background-size: 15px 15px;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+.ls-relationship-graph .ls-graph-canvas:focus-visible { outline: 2px solid #666; outline-offset: -3px; }
+.ls-relationship-graph .ls-graph-canvas.is-dragging { cursor: grabbing; }
+.ls-relationship-graph .ls-graph-edge { color: #a3a3a3; cursor: pointer; outline: none; transition: opacity .14s ease, color .14s ease; }
+.ls-relationship-graph .ls-graph-edge-line { fill: none; stroke: currentColor; stroke-width: 1.25; pointer-events: none; }
+.ls-relationship-graph .ls-graph-edge-hit { fill: none; stroke: transparent; stroke-width: 15; pointer-events: stroke; }
+.ls-relationship-graph .ls-graph-label-leader { fill: none; stroke: currentColor; stroke-width: .7; stroke-opacity: .65; pointer-events: none; }
+.ls-relationship-graph .ls-graph-edge-label rect { fill: #fff; stroke: #e0e0e0; stroke-width: .8; }
+.ls-relationship-graph .ls-graph-edge-label text { fill: #717171; font-family: inherit; font-size: 11px; font-weight: 500; pointer-events: none; }
+.ls-relationship-graph .ls-graph-edge:hover { color: #555; }
+.ls-relationship-graph .ls-graph-edge.is-active { color: #171717; }
+.ls-relationship-graph .ls-graph-edge.is-active .ls-graph-edge-line { stroke-width: 2; }
+.ls-relationship-graph .ls-graph-edge.is-active .ls-graph-edge-label rect { stroke: #999; }
+.ls-relationship-graph .ls-graph-edge.is-active .ls-graph-edge-label text { fill: #262626; font-weight: 650; }
+.ls-relationship-graph .ls-graph-edge.is-selected .ls-graph-edge-label rect { stroke: #333; stroke-width: 1.15; }
+.ls-relationship-graph .ls-graph-edge:focus-visible .ls-graph-edge-hit { stroke: #d1d1d1; stroke-opacity: .65; }
+.ls-relationship-graph .ls-graph-node { cursor: pointer; outline: none; transition: opacity .14s ease; }
+.ls-relationship-graph .ls-graph-node-card { fill: #fff; stroke: #c9c9c9; stroke-width: 1.1; filter: drop-shadow(0 1px 2px rgb(0 0 0 / .035)); }
+.ls-relationship-graph .ls-graph-node.kind-top-level .ls-graph-node-card { fill: #f7f7f7; stroke: #777; stroke-width: 1.35; }
+.ls-relationship-graph .ls-graph-node.kind-reference .ls-graph-node-card { fill: #fdfdfd; stroke-dasharray: 4 3; }
+.ls-relationship-graph .ls-graph-node.is-active .ls-graph-node-card { stroke: #555; stroke-width: 1.6; }
+.ls-relationship-graph .ls-graph-node.is-selected .ls-graph-node-card { stroke: #171717; stroke-width: 2.2; fill: #fff; }
+.ls-relationship-graph .ls-graph-node:hover .ls-graph-node-card { stroke: #333; }
+.ls-relationship-graph .ls-graph-node-focus { fill: none; stroke: transparent; stroke-width: 1.6; pointer-events: none; }
+.ls-relationship-graph .ls-graph-node:focus-visible .ls-graph-node-focus { stroke: #333; stroke-dasharray: 3 2; }
+.ls-relationship-graph .ls-graph-node-content { display: flex; flex-direction: column; justify-content: center; gap: 3px; width: 100%; height: 100%; box-sizing: border-box; padding: 7px 10px; pointer-events: none; overflow: hidden; }
+.ls-relationship-graph .ls-graph-node-type { display: flex; flex: 0 0 auto; align-items: center; gap: 5px; color: #858585; font-size: 9px; line-height: 11px; overflow: hidden; white-space: nowrap; }
+.ls-relationship-graph .ls-graph-node-type i,
+.ls-relationship-graph .ls-node-dot { display: inline-block; flex: 0 0 auto; width: 5px; height: 5px; box-sizing: border-box; border-radius: 50%; background: #929292; }
+.ls-relationship-graph .ls-graph-node.kind-top-level .ls-graph-node-type i,
+.ls-relationship-graph .ls-node-dot.kind-top-level { background: #262626; }
+.ls-relationship-graph .ls-graph-node.kind-reference .ls-graph-node-type i,
+.ls-relationship-graph .ls-node-dot.kind-reference { border: 1px solid #969696; background: #fff; }
+.ls-relationship-graph .ls-graph-node-title {
+  display: -webkit-box;
+  flex: 0 1 auto;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  color: #272727;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 15px;
+}
+.ls-relationship-graph .ls-graph-node-subtitle { flex: 0 0 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #929292; font-family: ui-monospace, Consolas, monospace; font-size: 9px; line-height: 11px; }
+.ls-relationship-graph .ls-graph-edge.is-dimmed,
+.ls-relationship-graph .ls-graph-node.is-dimmed { opacity: .2; }
+.ls-relationship-graph .ls-graph-edge:focus-visible,
+.ls-relationship-graph .ls-graph-node:focus-visible { opacity: 1; }
+.ls-relationship-graph .ls-graph-legend { display: flex; flex: 0 0 auto; flex-wrap: wrap; align-items: center; gap: 8px 13px; min-height: 34px; padding: 8px 12px; border-top: 1px solid #e7e7e7; color: #757575; font-size: 9px; }
+.ls-relationship-graph .ls-graph-legend > span { display: inline-flex; align-items: center; gap: 5px; }
+.ls-relationship-graph .ls-graph-legend small { margin-left: auto; color: #929292; font-size: 9px; }
+.ls-relationship-graph .ls-graph-empty { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 8px; padding: 24px; color: #929292; font-size: 12px; text-align: center; pointer-events: none; }
+.ls-relationship-graph .ls-graph-empty strong { color: #666; font-size: 13px; font-weight: 500; }
+.ls-relationship-graph .ls-graph-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+@media (max-width: 600px) {
+  .ls-relationship-graph .ls-graph-toolbar { align-items: flex-start; gap: 6px; padding: 10px 8px; }
+  .ls-relationship-graph .ls-graph-controls { gap: 3px; }
+  .ls-relationship-graph .ls-graph-controls button { min-height: 34px; padding: 5px 6px; }
+  .ls-relationship-graph .ls-graph-controls output { min-width: 35px; }
+  .ls-relationship-graph .ls-graph-controls button:last-child span { display: none; }
+  .ls-relationship-graph .ls-graph-controls button:last-child { min-width: 34px; }
+  .ls-relationship-graph .ls-graph-heading span { white-space: normal; }
+  .ls-relationship-graph .ls-graph-legend { gap: 7px 10px; padding: 8px; }
+  .ls-relationship-graph .ls-graph-legend small { width: 100%; margin-left: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ls-relationship-graph .ls-graph-edge,
+  .ls-relationship-graph .ls-graph-node { transition: none; }
+}

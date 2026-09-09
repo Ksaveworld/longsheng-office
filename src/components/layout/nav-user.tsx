@@ -1,0 +1,3 @@
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar'
+export function NavUser({ user }: { user: { name: string; email: string; avatar: string } }) { return <SidebarMenu><SidebarMenuItem><SidebarMenuButton size='lg'><Avatar className='h-8 w-8 rounded-lg'><AvatarFallback className='rounded-lg'>采</AvatarFallback></Avatar><div className='grid flex-1 text-start text-sm leading-tight'><span className='truncate font-semibold'>{user.name}</span><span className='truncate text-xs text-muted-foreground'>{user.email}</span></div></SidebarMenuButton></SidebarMenuItem></SidebarMenu> }
