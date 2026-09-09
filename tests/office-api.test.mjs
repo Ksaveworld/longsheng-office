@@ -28,6 +28,11 @@ test('HTTP full chain, confirmation, retries, role/version guards, isolation and
   try {
     assert.equal((await a('/snapshot')).body.analysis.riskCount, 1)
     const bInitial = (await b('/snapshot')).body
+    for (const step of ['impact', 'decisions', 'paths']) {
+      const current = (await a('/snapshot')).body
+      const result = await a('/guided', { step, mode: 'rules', expectedVersion: current.state.revision, idempotencyKey: randomUUID() }, 'lead')
+      assert.equal(result.body.run.status, 'completed')
+    }
     const cancelled = await preview({ type: 'request_quality' })
     assert.equal((await a('/snapshot')).body.state.tasks.length, 0, 'preview has no side effects')
     assert.equal((await confirm(cancelled, 'sales')).status, 403)
@@ -88,7 +93,7 @@ test('HTTP full chain, confirmation, retries, role/version guards, isolation and
     assert.equal((await a('/model', { baseUrl: 'https://other.example.com' }, 'lead')).body.keyConfigured, false, 'provider switch never forwards prior key')
     const rules = await a('/chat', { question: '延期影响哪些订单？', mode: 'rules' })
     assert.equal(rules.body.run.mode, 'rules')
-    assert.equal((await a('/runs')).body.runs.length, 1)
+    assert.equal((await a('/runs')).body.runs.length, 4)
     assert.equal((await b('/runs')).body.runs.length, 0)
     const failedLive = await a('/chat', { question: '没有连接时明确失败。', mode: 'live' })
     assert.equal(failedLive.body.run.status, 'failed')

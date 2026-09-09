@@ -1,37 +1,33 @@
-import { useState } from 'react'
-import { ArrowUp, Columns2, Loader2, MessageSquare } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { ArrowRight, ArrowUp, Loader2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { officeApi, errorText } from './api'
-import { ErrorNotice, RunContent, Section } from './shared'
+import { ErrorNotice, RunContent, Section, Sources } from './shared'
 import type {
   Action,
-  Comparison,
   History,
   ModelConfig,
   Role,
   Run,
+  Snapshot,
   Source,
 } from './types'
 
-const prompts = [
-  '供应商 A 延期会影响哪些订单？有几条需要处理？',
-  '这件事之前怎么决定的？现在应以哪条决定为准？',
-  '能否改用 B？还缺什么条件，应该找谁？',
-  '质量核验完成后，帮我准备切换方案和后续任务，先不要执行。',
+type Step = 'impact' | 'decisions' | 'paths'
+const steps: { id: Step; title: string }[] = [
+  { id: 'impact', title: '分析到料影响' },
+  { id: 'decisions', title: '追溯会议决定' },
+  { id: 'paths', title: '检查到料处置路径' },
 ]
 type Props = {
   role: Role
   config: ModelConfig | null
   history: History
+  snapshot: Snapshot
+  autoStart: number
+  onAutoStartHandled: () => void
   question: string
   setQuestion: (question: string) => void
   refresh: () => Promise<void>
@@ -39,10 +35,27 @@ type Props = {
   propose: (action: Action) => void
   openSettings: () => void
 }
+const source = (id: string, title: string): Source => ({ id, title })
+const impactSources = [
+  source('DOC-NOTICE', '采购延期通知样例'),
+  source('DOC-LEDGER', '采购与订单台账样例'),
+]
+const meetingSources = [
+  source('DOC-MEETING-01', '第一次会议记录 · DEC-01'),
+  source('DOC-MEETING-02', '第二次会议记录 · DEC-02'),
+]
+const ruleSources = [
+  source('DOC-LEDGER', '采购与订单台账样例'),
+  source('DOC-RULES', '供应商切换与关闭规则'),
+]
+
 export function Assistant({
   role,
   config,
   history,
+  snapshot,
+  autoStart,
+  onAutoStartHandled,
   question,
   setQuestion,
   refresh,
@@ -50,69 +63,383 @@ export function Assistant({
   propose,
   openSettings,
 }: Props) {
-  const [mode, setMode] = useState<'live' | 'rules'>(config?.mode || 'rules')
-  const [busy, setBusy] = useState<'chat' | 'compare' | null>(null)
+  const [busy, setBusy] = useState<Step | 'chat' | null>(null)
+  const busyRef = useRef(false)
+  const consumedAutoStart = useRef(0)
   const [error, setError] = useState('')
+  const [failedStep, setFailedStep] = useState<Step | null>(null)
   const [run, setRun] = useState<Run | null>(null)
-  const [comparison, setComparison] = useState<Comparison | null>(null)
-  const [historical, setHistorical] = useState(false)
-  async function submit(kind: 'chat' | 'compare') {
-    if (!question.trim() || busy) return
+  const { state, analysis, workflow } = snapshot
+  const mode = config?.mode || 'rules'
+  const progress = workflow.analysisStep
+  const currentSupplier = state.suppliers.find(
+    (item) => item.id === state.matter.supplierId
+  )
+  const supplierB = state.suppliers.find((item) => item.id === 'B')
+  const qa = state.tasks.find((item) => item.id === 'T-QA')
+  const closed = state.matter.status === 'closed'
+  const latestStepRun = (step: Step) =>
+    [run, ...history.runs].find(
+      (item) => item?.step === step && item.status === 'completed'
+    )
+
+  async function guided(step: Step) {
+    if (busyRef.current) return
+    busyRef.current = true
+    setBusy(step)
     setError('')
-    setBusy(kind)
-    setRun(null)
-    setComparison(null)
-    setHistorical(false)
+    setFailedStep(null)
     try {
-      if (kind === 'compare') {
-        const result = await officeApi<{ comparison: Comparison }>(
-          '/compare',
-          role,
-          { question: question.trim() }
-        )
-        setComparison(result.comparison)
-      } else {
-        const result = await officeApi<{ run: Run }>('/chat', role, {
-          question: question.trim(),
-          mode,
-        })
-        setRun(result.run)
+      const result = await officeApi<{ run: Run }>('/guided', role, {
+        step,
+        mode,
+        expectedVersion: state.revision,
+        idempotencyKey: crypto.randomUUID(),
+      })
+      setRun(result.run)
+      await refresh()
+      if (result.run.status === 'failed') {
+        setFailedStep(step)
+        setError('本轮分析未完成，请重试，或在演示设置中切换运行模式。')
       }
+    } catch (failure) {
+      setError(errorText(failure))
+      setFailedStep(step)
+    } finally {
+      busyRef.current = false
+      setBusy(null)
+    }
+  }
+
+  // Consume the navigation intent before starting: rerenders and StrictMode
+  // effect replay must never submit the automatic analysis twice.
+  useEffect(() => {
+    if (
+      !autoStart ||
+      consumedAutoStart.current === autoStart ||
+      busyRef.current
+    )
+      return
+    consumedAutoStart.current = autoStart
+    queueMicrotask(() => {
+      onAutoStartHandled()
+      if (progress === 0) void guided('impact')
+    })
+    // This effect handles a navigation intent, not snapshot changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoStart])
+
+  async function submit() {
+    if (!question.trim() || busyRef.current) return
+    busyRef.current = true
+    setBusy('chat')
+    setError('')
+    try {
+      const result = await officeApi<{ run: Run }>('/chat', role, {
+        question: question.trim(),
+        mode,
+      })
+      setRun(result.run)
       await refresh()
     } catch (failure) {
       setError(errorText(failure))
     } finally {
+      busyRef.current = false
       setBusy(null)
     }
   }
+
+  function evidence(step: Step, sources: Source[]) {
+    const recorded = latestStepRun(step)
+    return (
+      <div className='space-y-3 border-t pt-4'>
+        <Sources sources={sources} open={openSource} />
+        {recorded && (
+          <>
+            {(recorded.resultRevision ?? recorded.revision) !==
+              state.revision && (
+              <p className='text-xs text-muted-foreground'>
+                本轮解释基于历史数据；上方业务事实和右侧上下文已按当前状态更新。
+              </p>
+            )}
+            <details className='text-sm'>
+              <summary className='cursor-pointer text-muted-foreground'>
+                查看本轮{recorded.mode === 'live' ? '模型解释' : '规则演示记录'}
+              </summary>
+              <div className='mt-4'>
+                <RunContent run={recorded} openSource={openSource} />
+              </div>
+            </details>
+          </>
+        )}
+      </div>
+    )
+  }
+
   return (
-    <div className='grid items-start gap-6 2xl:grid-cols-[minmax(0,1fr)_280px]'>
+    <div className='grid items-start gap-6 xl:grid-cols-[minmax(0,1.85fr)_minmax(260px,1fr)]'>
       <div className='min-w-0 space-y-5'>
-        <Section
-          title='围绕当前事项提问'
-          aside={<Badge variant='outline'>SUP-001</Badge>}
-        >
-          <div className='space-y-4'>
-            <div className='flex flex-wrap gap-2'>
-              {prompts.map((prompt, index) => (
-                <Button
-                  variant='outline'
-                  size='sm'
-                  key={prompt}
-                  onClick={() => setQuestion(prompt)}
-                  disabled={!!busy}
-                >
-                  {
-                    [
-                      '分析到料影响',
-                      '追溯会议决定',
-                      '检查切换条件',
-                      '准备后续任务',
-                    ][index]
-                  }
-                </Button>
-              ))}
+        <div className='flex flex-wrap items-center justify-between gap-3'>
+          <div>
+            <p className='text-sm font-medium'>供应商延期处置</p>
+            <p className='mt-1 text-xs text-muted-foreground'>
+              按影响、依据和处置条件逐步核对
+            </p>
+          </div>
+          <div className='flex items-center gap-2'>
+            <Badge variant='outline'>
+              {mode === 'live' ? '真实模型' : '规则演示'}
+            </Badge>
+            <Button variant='link' size='sm' onClick={openSettings}>
+              运行设置
+            </Button>
+          </div>
+        </div>
+        {progress === 0 && (
+          <Section title='先核对延期影响'>
+            <p className='text-sm leading-7'>
+              供应商 A 原定 D
+              {state.suppliers.find((item) => item.id === 'A')?.originalDay ??
+                3}{' '}
+              到料，最新通知为 D
+              {state.suppliers.find((item) => item.id === 'A')?.arrivalDay}
+              。完成分析后，再逐步核对关联订单与处理依据。
+            </p>
+            {!busy && !failedStep && (
+              <a
+                className='mt-4 inline-block text-sm underline underline-offset-4'
+                href={`${import.meta.env.BASE_URL}office#home`}
+              >
+                返回办公协同，开始分析影响
+              </a>
+            )}
+          </Section>
+        )}
+        {progress >= 1 && (
+          <Section
+            title='01 · 到料影响'
+            aside={<Badge variant='outline'>当前业务事实</Badge>}
+          >
+            <div className='space-y-4'>
+              <p className='text-base leading-7 font-semibold'>
+                关联 {analysis.linkedCount} 条订单，其中 {analysis.riskCount}{' '}
+                条存在当前方案到料风险。
+              </p>
+              <div className='overflow-x-auto'>
+                <table className='w-full text-left text-sm'>
+                  <thead className='border-b text-muted-foreground'>
+                    <tr>
+                      {['订单', '最迟到料', '当前方案到料', '判断'].map(
+                        (label) => (
+                          <th
+                            className='px-2 py-3 font-normal whitespace-nowrap'
+                            key={label}
+                          >
+                            {label}
+                          </th>
+                        )
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {analysis.orders.map((order) => (
+                      <tr className='border-b last:border-0' key={order.id}>
+                        <td className='px-2 py-3 font-medium'>{order.id}</td>
+                        <td className='px-2 py-3'>D{order.requiredDay}</td>
+                        <td className='px-2 py-3'>D{order.arrivalDay}</td>
+                        <td
+                          className={`px-2 py-3 whitespace-nowrap ${order.atRisk ? 'text-destructive' : 'text-emerald-700'}`}
+                        >
+                          {order.atRisk
+                            ? `晚 ${order.lateDays} 天`
+                            : '满足要求'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className='text-sm leading-7 text-muted-foreground'>
+                当前由供应商 {state.matter.supplierId} 供应，预计 D
+                {currentSupplier?.arrivalDay}{' '}
+                到料；逐条与订单最迟到料日比较。到料时间为当前预计，实际履约结果仍需后续跟进。
+              </p>
+              {evidence('impact', impactSources)}
             </div>
+          </Section>
+        )}
+        {progress >= 2 && (
+          <Section
+            title='02 · 会议决定'
+            aside={<Badge variant='outline'>当前业务事实</Badge>}
+          >
+            <div className='space-y-4'>
+              {state.decisions.map((decision) => (
+                <div className='rounded-lg border p-4' key={decision.id}>
+                  <div className='flex flex-wrap items-center gap-2'>
+                    <span className='text-sm font-semibold'>{decision.id}</span>
+                    <Badge variant='outline'>
+                      {decision.id === 'DEC-02'
+                        ? state.matter.supplierId === 'B'
+                          ? '附条件候选方案 · 条件已落实'
+                          : '附条件候选方案 · 未生效'
+                        : decision.status === 'effective'
+                          ? '当前有效决定'
+                          : '已替代'}
+                    </Badge>
+                  </div>
+                  <p className='mt-3 text-sm leading-7'>{decision.text}</p>
+                </div>
+              ))}
+              <p className='text-sm leading-7'>
+                {state.matter.supplierId === 'B'
+                  ? `负责人已确认切换，当前以 ${analysis.effectiveDecisionId} 为准；较早会议记录保留。`
+                  : 'DEC-02 记录时间较新，但没有获得切换批准，不能自动替代当前有效决定 DEC-01。'}
+              </p>
+              {evidence('decisions', meetingSources)}
+            </div>
+          </Section>
+        )}
+        {progress >= 3 && (
+          <Section
+            title='03 · 到料处置路径比较'
+            aside={<Badge variant='outline'>当前业务事实</Badge>}
+          >
+            <div className='space-y-4'>
+              <div className='grid gap-3 md:grid-cols-2'>
+                {analysis.options.map((option) => (
+                  <div
+                    className='space-y-3 rounded-lg border p-4'
+                    key={option.supplierId}
+                  >
+                    <h3 className='text-sm font-semibold'>
+                      {option.supplierId === 'A'
+                        ? '路径 A · 继续由 A 供应'
+                        : '路径 B · 满足条件后切换 B'}
+                    </h3>
+                    <p className='text-sm'>
+                      预计 D{option.arrivalDay} 到料 · {option.riskCount}{' '}
+                      条到料风险
+                    </p>
+                    <p className='text-sm text-muted-foreground'>
+                      {option.supplierId === 'A'
+                        ? '供应资格有效'
+                        : option.quality === 'approved'
+                          ? '质量核验已通过'
+                          : option.quality === 'rejected'
+                            ? '质量核验未通过，本轮 B 路径不可执行'
+                            : '质量资格待核验'}
+                    </p>
+                    <p className='text-sm text-muted-foreground'>
+                      {state.matter.supplierId === option.supplierId
+                        ? '当前执行路径'
+                        : option.supplierId === 'B'
+                          ? '负责人尚未批准 · 当前不能执行'
+                          : '原路径已替代'}
+                    </p>
+                  </div>
+                ))}
+              </div>
+              <p className='text-sm leading-7'>
+                {supplierB?.quality === 'rejected'
+                  ? 'B 质量核验未通过，当前继续执行 A。需补充依据并重新核验，不能批准切换。'
+                  : state.matter.supplierId === 'B'
+                    ? '质量核验与负责人批准均已完成，当前按 B 路径跟进采购与销售回执。'
+                    : supplierB?.quality === 'approved'
+                      ? 'B 质量核验已通过，下一步由业务负责人在办公协同首页确认切换。'
+                      : `B 的预计到料日为 D${supplierB?.arrivalDay}，当前仍缺质量核验和负责人批准。`}
+              </p>
+              {evidence('paths', ruleSources)}
+            </div>
+          </Section>
+        )}
+        {closed && (
+          <Section title='事项处理结果'>
+            <div className='space-y-3 text-sm'>
+              <p className='font-semibold'>
+                {state.matter.id} 已完成 · 当前有效决定{' '}
+                {analysis.effectiveDecisionId}
+              </p>
+              <p>
+                当前供应商 {state.matter.supplierId}，预计 D
+                {currentSupplier?.arrivalDay} 到料，{analysis.riskCount}{' '}
+                条当前方案到料风险。
+              </p>
+              {state.tasks.map((task) => (
+                <p key={task.id}>
+                  {task.id} · {task.title} ·{' '}
+                  {task.status === 'completed' ? '已完成' : '待处理'}
+                  {task.receipt ? ' · 已有回执' : ''}
+                </p>
+              ))}
+              <Sources
+                sources={[
+                  source('DOC-STATE', '事项状态与全部回执'),
+                  source('DOC-DECISION-03', '负责人批准记录'),
+                ]}
+                open={openSource}
+              />
+              <p className='border-t pt-3 text-muted-foreground'>
+                关闭表示办公协同事项处理完成，不代表实际采购到货、生产完成或订单交付。
+              </p>
+            </div>
+          </Section>
+        )}
+        {busy && (
+          <div
+            role='status'
+            className='flex items-center gap-3 rounded-lg border p-5 text-sm'
+          >
+            <Loader2 className='size-4 animate-spin' />
+            {busy === 'chat'
+              ? '正在查询当前事项…'
+              : `正在${steps.find((item) => item.id === busy)?.title}…`}
+          </div>
+        )}
+        <ErrorNotice message={error} />
+        {run?.status === 'failed' && (
+          <Section title='本次运行未完成'>
+            <RunContent run={run} openSource={openSource} />
+          </Section>
+        )}
+        {!closed && (
+          <div className='flex flex-wrap items-center gap-3'>
+            {failedStep ? (
+              <Button disabled={!!busy} onClick={() => void guided(failedStep)}>
+                重试{steps.find((item) => item.id === failedStep)?.title}
+              </Button>
+            ) : progress > 0 && progress < 3 ? (
+              <Button
+                disabled={!!busy}
+                onClick={() => void guided(steps[progress].id)}
+              >
+                {steps[progress].title}
+                <ArrowRight className='size-4' />
+              </Button>
+            ) : progress >= 3 &&
+              (!qa || supplierB?.quality === 'rejected') &&
+              ['lead', 'procurement'].includes(role) ? (
+              <Button
+                disabled={!!busy}
+                onClick={() => propose({ type: 'request_quality' })}
+              >
+                {supplierB?.quality === 'rejected'
+                  ? '重新发起质量核验'
+                  : '发起质量核验'}
+                <ArrowRight className='size-4' />
+              </Button>
+            ) : progress >= 3 ? (
+              <a
+                href={`${import.meta.env.BASE_URL}office#home`}
+                className='text-sm underline underline-offset-4'
+              >
+                返回办公协同，查看当前待办
+              </a>
+            ) : null}
+          </div>
+        )}
+        <Section title='继续问当前事项'>
+          <div className='space-y-3'>
             <label htmlFor='office-question' className='sr-only'>
               业务问题
             </label>
@@ -120,197 +447,107 @@ export function Assistant({
               id='office-question'
               value={question}
               onChange={(event) => setQuestion(event.target.value)}
-              placeholder='影响了哪些订单，上次会怎么定的，现在该找谁处理？'
-              className='min-h-28 resize-y text-sm leading-7'
+              placeholder='例如：这件事现在处理到哪里了？'
+              className='min-h-24 resize-y text-sm leading-7'
               disabled={!!busy}
               onKeyDown={(event) => {
                 if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
                   event.preventDefault()
-                  void submit('chat')
+                  void submit()
                 }
               }}
             />
             <div className='flex flex-wrap items-center justify-between gap-3'>
-              <Select
-                value={mode}
-                onValueChange={(value) => setMode(value as 'live' | 'rules')}
-                disabled={!!busy}
+              <p className='text-xs text-muted-foreground'>
+                回答可追溯来源，业务操作需人工确认。
+              </p>
+              <Button
+                size='sm'
+                variant='outline'
+                disabled={!!busy || !question.trim()}
+                onClick={() => void submit()}
               >
-                <SelectTrigger className='w-40' aria-label='助手运行模式'>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value='rules'>规则演示</SelectItem>
-                  <SelectItem value='live'>真实模型</SelectItem>
-                </SelectContent>
-              </Select>
-              <div className='flex gap-2'>
-                <Button
-                  variant='outline'
-                  disabled={!!busy || !question.trim()}
-                  onClick={() => void submit('compare')}
-                >
-                  <Columns2 className='size-4' />
-                  同题真实对比
-                </Button>
-                <Button
-                  disabled={!!busy || !question.trim()}
-                  onClick={() => void submit('chat')}
-                >
-                  {busy === 'chat' ? (
-                    <Loader2 className='size-4 animate-spin' />
-                  ) : (
-                    <ArrowUp className='size-4' />
-                  )}
-                  发送问题
-                </Button>
-              </div>
+                <ArrowUp className='size-4' />
+                发送问题
+              </Button>
             </div>
-            <div className='flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground'>
-              <span>
-                {mode === 'rules'
-                  ? '规则演示使用后台数据与规则，不计入真实助手验收。'
-                  : '将调用已配置模型；运行失败会保留失败记录。'}
-              </span>
-              {!config?.keyConfigured && (
-                <Button
-                  variant='link'
-                  className='h-auto p-0'
-                  onClick={openSettings}
-                >
-                  尚未配置模型密钥
-                </Button>
-              )}
-            </div>
-            <p className='text-xs text-muted-foreground'>
-              同题对比始终使用真实模型：同一问题、数据版本、角色与 4
-              轮运行预算。不预设优劣。
-            </p>
           </div>
         </Section>
-        {busy && (
-          <div
-            role='status'
-            className='flex items-center gap-3 rounded-lg border p-5 text-sm'
-          >
-            <Loader2 className='size-4 animate-spin' />
-            <span>
-              {busy === 'compare'
-                ? '正在运行材料检索与本体增强两个分支…'
-                : mode === 'live'
-                  ? '模型正在读取资料并调用工具…'
-                  : '正在读取演示后台并计算结果…'}
-            </span>
-          </div>
-        )}
-        <ErrorNotice message={error} />
-        {run && (
-          <Section
-            title={historical ? '历史运行记录' : '处理建议'}
-            aside={historical && <Badge variant='outline'>历史回放</Badge>}
-          >
-            <p className='mb-4 border-b pb-4 text-sm text-muted-foreground'>
-              {run.question}
-            </p>
-            <RunContent run={run} openSource={openSource} propose={propose} />
+        {run && !run.step && run.status !== 'failed' && (
+          <Section title='查询结果'>
+            {run.revision !== state.revision && (
+              <p className='mb-4 text-xs text-muted-foreground'>
+                此回答对应历史状态，当前事实请以右侧上下文为准。
+              </p>
+            )}
+            <RunContent run={run} openSource={openSource} />
           </Section>
         )}
-        {comparison && (
-          <div className='space-y-4'>
-            <div className='flex flex-wrap items-center gap-2 text-sm'>
-              <Badge variant='outline'>
-                {historical ? '历史回放' : '同题真实对比'}
-              </Badge>
-              <span>数据 v{comparison.revision}</span>
-              <span className='text-muted-foreground'>{comparison.model}</span>
+      </div>
+      <div className='min-w-0 space-y-5 xl:sticky xl:top-6'>
+        <Section
+          title='当前事项上下文'
+          aside={<Badge variant='outline'>{state.matter.id}</Badge>}
+        >
+          <dl className='space-y-4 text-sm'>
+            {[
+              ['事项状态', workflow.label],
+              ['当前供应商', `供应商 ${state.matter.supplierId}`],
+              [
+                '当前有效决定',
+                progress >= 2 ? analysis.effectiveDecisionId : '待核对',
+              ],
+              [
+                '关联订单',
+                progress >= 1 ? `${analysis.linkedCount} 条` : '待分析',
+              ],
+              [
+                '当前到料风险',
+                progress >= 1 ? `${analysis.riskCount} 条` : '待分析',
+              ],
+              ['待处理动作', `${workflow.pendingActionCount} 项`],
+            ].map(([label, value]) => (
+              <div
+                className='flex items-start justify-between gap-4'
+                key={label}
+              >
+                <dt className='text-muted-foreground'>{label}</dt>
+                <dd className='text-right font-medium'>{value}</dd>
+              </div>
+            ))}
+          </dl>
+          <p className='mt-5 border-t pt-4 text-xs leading-6 text-muted-foreground'>
+            当前上下文与办公协同、事项详情同步。
+          </p>
+        </Section>
+        {progress >= 3 && (
+          <Section title='当前条件'>
+            <div className='space-y-3 text-sm'>
+              <p>
+                质量核验：
+                {supplierB?.quality === 'approved'
+                  ? '已通过'
+                  : supplierB?.quality === 'rejected'
+                    ? '未通过'
+                    : '待核验'}
+              </p>
+              <p>
+                负责人批准：
+                {state.matter.supplierId === 'B' ? '已批准' : '尚未批准'}
+              </p>
+              <p className='leading-7 text-muted-foreground'>
+                {analysis.nextStep}
+              </p>
+              {workflow.missingReceipts.length > 0 &&
+                state.matter.supplierId === 'B' && (
+                  <p className='text-amber-700'>
+                    待补回执：{workflow.missingReceipts.join('、')}
+                  </p>
+                )}
             </div>
-            <p className='text-sm'>{comparison.question}</p>
-            <div className='grid items-start gap-4 xl:grid-cols-2'>
-              <Section title='材料检索'>
-                <RunContent
-                  run={comparison.baseline}
-                  openSource={openSource}
-                  propose={propose}
-                />
-              </Section>
-              <Section title='本体增强'>
-                <RunContent
-                  run={comparison.ontology}
-                  openSource={openSource}
-                  propose={propose}
-                />
-              </Section>
-            </div>
-            <p className='text-sm text-muted-foreground'>
-              材料检索按原始文档查询；本体增强增加对象关系和业务规则。工具调用与准备信息见各自记录，耗时不等同于整体交付成本。
-            </p>
-          </div>
-        )}
-        {!run && !comparison && !busy && !error && (
-          <div className='flex min-h-40 flex-col items-center justify-center rounded-lg border border-dashed p-6 text-center'>
-            <MessageSquare className='mb-3 size-6 text-muted-foreground' />
-            <p className='text-sm font-medium'>从一个具体问题开始</p>
-            <p className='mt-2 text-sm text-muted-foreground'>
-              答案中的来源可以打开核对，业务操作仍需你检查并确认。
-            </p>
-          </div>
+          </Section>
         )}
       </div>
-      <Section title='当前空间的运行记录'>
-        <div className='space-y-4'>
-          {!history.runs.length && !history.comparisons.length && (
-            <p className='text-sm text-muted-foreground'>暂无运行记录。</p>
-          )}
-          {history.runs
-            .slice(0, 12)
-            .map((item) => (
-              <button
-                key={item.id}
-                className='block w-full rounded-md border p-3 text-start hover:bg-muted/40'
-                disabled={!!busy}
-                onClick={() => {
-                  setRun(item)
-                  setComparison(null)
-                  setHistorical(true)
-                  setError('')
-                }}
-              >
-                <p className='line-clamp-2 text-sm leading-6'>
-                  {item.question}
-                </p>
-                <p className='mt-2 text-xs text-muted-foreground'>
-                  {item.mode === 'live' ? '真实模型' : '规则演示'} · v
-                  {item.revision} · {item.status === 'failed' ? '失败' : '完成'}
-                </p>
-              </button>
-            ))}
-          {history.comparisons
-            .slice(0, 5)
-            .map((item) => (
-              <button
-                key={item.id}
-                className='block w-full rounded-md border p-3 text-start hover:bg-muted/40'
-                disabled={!!busy}
-                onClick={() => {
-                  setComparison(item)
-                  setRun(null)
-                  setHistorical(true)
-                  setError('')
-                }}
-              >
-                <Badge variant='outline' className='mb-2'>
-                  同题对比
-                </Badge>
-                <p className='line-clamp-2 text-sm leading-6'>
-                  {item.question}
-                </p>
-                <p className='mt-2 text-xs text-muted-foreground'>
-                  数据 v{item.revision}
-                </p>
-              </button>
-            ))}
-        </div>
-      </Section>
     </div>
   )
 }

@@ -25,6 +25,7 @@ function assertIntegrity(graph) {
   assert.equal(graph.projection.revision, graph.revision)
 }
 function approve(state = createState()) {
+  state.workflow.analysisStep = 3
   state = applyAction(state, { type: 'request_quality' }, 'procurement')
   state = applyAction(state, { type: 'submit_quality', taskId: 'T-QA', result: 'approved', evidence: '资格证书及抽检均通过' }, 'quality')
   return applyAction(state, { type: 'approve_switch' }, 'lead')
@@ -87,10 +88,12 @@ test('closure updates task and receipt state without claiming arrival or deliver
 
 test('retry and repeated quality review keep one task and preserve historical evidence', () => {
   let state = applyAction(createState(), { type: 'arm_delivery_failure' }, 'lead')
+  state.workflow.analysisStep = 3
   state = applyAction(state, { type: 'request_quality' }, 'procurement')
   assert.equal(object(projectOffice(state), 'Task:T-QA').properties.status, 'delivery_failed')
   state = applyAction(state, { type: 'retry_delivery', taskId: 'T-QA' }, 'quality')
   state = applyAction(state, { type: 'submit_quality', taskId: 'T-QA', result: 'rejected', evidence: '原证书过期' }, 'quality')
+  state.workflow.analysisStep = 3
   state = applyAction(state, { type: 'request_quality' }, 'procurement')
   let graph = projectOffice(state)
   assertIntegrity(graph)

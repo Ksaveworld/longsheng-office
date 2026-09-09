@@ -93,12 +93,6 @@ export function RunContent({
         <Badge variant='outline'>
           {run.mode === 'live' ? '模型实际调用' : '规则演示'}
         </Badge>
-        <span>数据 v{run.revision}</span>
-        {run.mode === 'live' && (
-          <span>
-            {run.model} · {(run.latencyMs / 1000).toFixed(1)} 秒
-          </span>
-        )}
         <span>{run.status === 'failed' ? '运行失败' : '已完成'}</span>
       </div>
       {run.status === 'failed' && (
@@ -122,7 +116,11 @@ export function RunContent({
         </Button>
       )}
       <a href={`${import.meta.env.BASE_URL}office#matter`} className='inline-flex text-sm underline underline-offset-4'>查看当前事项关系与回执</a>
-      <ExecutionTrace run={run} />
+      <details className='rounded-md border p-3'>
+        <summary className='cursor-pointer text-sm text-muted-foreground'>查看技术详情</summary>
+        <p className='my-3 text-xs text-muted-foreground'>数据 v{run.revision} · {run.mode === 'live' ? run.model : '规则演示'} · {(run.latencyMs / 1000).toFixed(1)} 秒</p>
+        <ExecutionTrace run={run} />
+      </details>
     </div>
   )
 }
