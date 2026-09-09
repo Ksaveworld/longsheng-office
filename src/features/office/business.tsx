@@ -26,6 +26,7 @@ import {
   type Source,
   type Task,
 } from './types'
+import { ReviewSummary } from './workflow-overview'
 
 export type BusinessProps = {
   snapshot: Snapshot
@@ -68,7 +69,7 @@ function situation({ state, analysis }: Snapshot) {
       waiting: '各岗位处理完成，负责人已复核',
       detail: '本次办公事项已关闭，决定、核验凭据和部门回执已留档。',
     }
-  if (state.matter.supplierId === 'B') {
+  if (analysis.executionApproved) {
     if (analysis.canClose)
       return {
         label: '待负责人复核',
@@ -82,11 +83,23 @@ function situation({ state, analysis }: Snapshot) {
       label: '部门执行中',
       waiting: missing.join('、') + ' · 提交处理回执',
       detail:
-        '切换决定已生效，部门回执 ' +
+        '负责人已确认执行方案，部门回执 ' +
         (2 - analysis.missingReceipts.length) +
         '/2。',
     }
   }
+  if (state.matter.planSelection?.supplierId === 'A')
+    return {
+      label: '待确认沿用 A',
+      waiting: '业务负责人 · 确认到料风险与跟进安排',
+      detail: analysis.nextStep,
+    }
+  if (!state.matter.planSelection && !qa)
+    return {
+      label: '待选择方案',
+      waiting: '采购经办或业务负责人 · 比较并选择 A/B',
+      detail: analysis.nextStep,
+    }
   if (quality === 'rejected')
     return {
       label: '质量核验不通过',
@@ -239,6 +252,35 @@ export function BusinessActions({
   const quality = state.suppliers.find(
     (supplier) => supplier.id === 'B'
   )?.quality
+  const selectedPlan =
+    state.matter.planSelection?.supplierId ??
+    (qa || state.matter.supplierId === 'B' ? 'B' : undefined)
+  if (analysis.canClose)
+    return role === 'lead' ? (
+      <Button disabled={busy} onClick={() => propose({ type: 'close_matter' })}>
+        复核并关闭事项
+      </Button>
+    ) : null
+  if (analysis.executionApproved) return null
+  if (!selectedPlan)
+    return (
+      <p className='text-sm text-muted-foreground'>
+        请先在方案比较中选择处理方案并说明原因。
+      </p>
+    )
+  if (selectedPlan === 'A')
+    return role === 'lead' ? (
+      <Button
+        disabled={busy}
+        onClick={() => propose({ type: 'approve_keep_a' })}
+      >
+        确认沿用 A 并安排跟进
+      </Button>
+    ) : (
+      <p className='text-sm text-muted-foreground'>
+        等待业务负责人确认沿用 A 及跟进安排。
+      </p>
+    )
   if (
     state.matter.supplierId === 'A' &&
     (!qa || (qa.status === 'completed' && quality === 'rejected')) &&
@@ -360,7 +402,7 @@ export function RoleAction(
         {own && <Receipt task={own} />}
         {!closed &&
           props.role === 'lead' &&
-          state.matter.supplierId === 'B' &&
+          analysis.executionApproved &&
           !analysis.canClose && (
             <details className='border-t pt-4 text-sm'>
               <summary className='cursor-pointer font-medium'>
@@ -369,11 +411,13 @@ export function RoleAction(
               <ul className='mt-3 space-y-2 text-muted-foreground'>
                 <li>有效决定：{analysis.effectiveDecisionId}</li>
                 <li>
-                  质量核验：
-                  {state.suppliers.find((supplier) => supplier.id === 'B')
-                    ?.quality === 'approved'
-                    ? '已通过'
-                    : '未通过'}
+                  质量资格：
+                  {state.matter.supplierId === 'A'
+                    ? '沿用 A 已批准资格'
+                    : state.suppliers.find((supplier) => supplier.id === 'B')
+                          ?.quality === 'approved'
+                      ? '已通过'
+                      : '未通过'}
                 </li>
                 {['T-PUR', 'T-SALES'].map((id) => (
                   <li key={id}>
@@ -595,7 +639,7 @@ export function Home(props: BusinessProps) {
     </div>
   )
 }
-function Paths({ snapshot }: { snapshot: Snapshot }) {
+export function Paths({ snapshot }: { snapshot: Snapshot }) {
   const { state, analysis } = snapshot
   return (
     <Section title='到料方案比较'>
@@ -620,6 +664,14 @@ function Paths({ snapshot }: { snapshot: Snapshot }) {
                       : '原方案'}
                 </Badge>
               </div>
+              {state.matter.planSelection?.supplierId === option.supplierId && (
+                <p className='mt-2 text-xs font-medium'>
+                  已选择此处理方案
+                  {!analysis.executionApproved
+                    ? ' · 待完成前置条件与负责人确认'
+                    : ''}
+                </p>
+              )}
               <p className='mt-4 text-sm'>
                 预计{' '}
                 <strong className='text-xl tabular-nums'>
@@ -711,12 +763,8 @@ export function Matter(props: BusinessProps) {
             原料 {state.matter.materialId}
           </span>
         </div>
-        <Button
-          variant='ghost'
-          size='sm'
-          onClick={() => ask('这件事当前的有效决定是什么，还需要谁做什么？')}
-        >
-          询问业务助手
+        <Button variant='ghost' size='sm' onClick={() => ask('')}>
+          返回业务助手
           <ArrowRight className='size-4' />
         </Button>
       </div>
@@ -774,8 +822,20 @@ export function Matter(props: BusinessProps) {
             </div>
           </div>
         </Section>
-        <RoleAction {...props} viewMatter={undefined} />
+        <Section title='事项回顾'>
+          <p className='text-sm leading-7 text-muted-foreground'>
+            在这里回顾延期原因、方案选择、会议依据与部门处理记录。办理操作和最终复核统一在业务助手中完成。
+          </p>
+          <Button className='mt-4' onClick={() => ask('')}>
+            返回助手继续办理
+          </Button>
+        </Section>
       </div>
+      <ReviewSummary
+        snapshot={snapshot}
+        sources={sources}
+        openSource={openSource}
+      />
       <Section
         title='任务与回执'
         aside={

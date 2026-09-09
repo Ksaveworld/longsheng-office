@@ -9,8 +9,8 @@ import {
   Settings2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
@@ -26,11 +26,11 @@ import {
   SheetFooter,
   SheetTitle,
 } from '@/components/ui/sheet'
-import { ActionSheet } from './action-sheet'
 import { Textarea } from '@/components/ui/textarea'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ThemeSwitch } from '@/components/theme-switch'
+import { ActionSheet } from './action-sheet'
 import { officeApi, errorText, getOfficeSnapshot, OfficeError } from './api'
 import { Assistant } from './assistant'
 import { Home, Matter } from './business'
@@ -47,6 +47,7 @@ import {
   type Snapshot,
   type Source,
   type Task,
+  type AssistantSession,
 } from './types'
 
 const pages = [
@@ -93,7 +94,9 @@ export function OfficeApp() {
   const [accessRequired, setAccessRequired] = useState(false)
   const [accessCode, setAccessCode] = useState('')
   const [notice, setNotice] = useState('')
-  const [question, setQuestion] = useState('')
+  const [assistantSessions, setAssistantSessions] = useState<
+    Record<string, AssistantSession>
+  >({})
   const [source, setSource] = useState<Source | null>(null)
   const [preview, setPreview] = useState<Preview | null>(null)
   const [actionBusy, setActionBusy] = useState(false)
@@ -103,12 +106,44 @@ export function OfficeApp() {
   const [qualityResult, setQualityResult] = useState('approved')
   const confirmKey = useRef('')
   const operationLock = useRef(false)
-  const returnToMatter = useRef(false)
   const receiptVersion = useRef<number | undefined>(undefined)
-  const receiptDraft = useRef<{ task: Task; evidence: string; result: string } | null>(null)
+  const receiptDraft = useRef<{
+    task: Task
+    evidence: string
+    result: string
+  } | null>(null)
+  const sessionKey = `${snapshot?.workspaceId}:${snapshot?.state.matter.id}:${role}:${config?.mode}`
+  const priorRun =
+    history.runs.find(
+      (item) =>
+        item.role === role &&
+        item.mode === config?.mode &&
+        item.variant === 'ontology'
+    ) ?? null
+  const assistantSession = assistantSessions[sessionKey] ?? {
+    question: priorRun?.question ?? '',
+    planReason: '',
+    run: priorRun,
+    historical: !!priorRun,
+    busy: false,
+    error: '',
+    failedQuestion: '',
+    snapshotReady: false,
+  }
+  function updateAssistantSession(patch: Partial<AssistantSession>) {
+    setAssistantSessions((previous) => ({
+      ...previous,
+      [sessionKey]: { ...(previous[sessionKey] ?? assistantSession), ...patch },
+    }))
+  }
 
   useEffect(() => {
-    if (receiptTask) receiptDraft.current = { task: receiptTask, evidence, result: qualityResult }
+    if (receiptTask)
+      receiptDraft.current = {
+        task: receiptTask,
+        evidence,
+        result: qualityResult,
+      }
   }, [receiptTask, evidence, qualityResult])
 
   const refresh = useCallback(async () => {
@@ -116,7 +151,10 @@ export function OfficeApp() {
     try {
       next = await getOfficeSnapshot(role)
     } catch (failure) {
-      if (failure instanceof OfficeError && failure.code === 'ACCESS_REQUIRED') {
+      if (
+        failure instanceof OfficeError &&
+        failure.code === 'ACCESS_REQUIRED'
+      ) {
         setAccessRequired(true)
         setSnapshot(null)
       }
@@ -159,7 +197,7 @@ export function OfficeApp() {
     setPage(next)
   }
   function ask(value: string) {
-    if (value) setQuestion(value)
+    if (value) updateAssistantSession({ question: value })
     navigate('assistant')
   }
   function openSource(value: Source) {
@@ -194,7 +232,6 @@ export function OfficeApp() {
   async function propose(action: Action, expectedVersion?: number) {
     if (operationLock.current) return
     operationLock.current = true
-    returnToMatter.current = page === 'assistant'
     setActionBusy(true)
     setError('')
     setConfirmError('')
@@ -214,7 +251,6 @@ export function OfficeApp() {
         })
         setSnapshot(next)
         setNotice('已开始处理。')
-        if (returnToMatter.current) navigate('matter')
         await refresh()
       } else {
         setPreview(response.preview)
@@ -222,9 +258,16 @@ export function OfficeApp() {
     } catch (failure) {
       setError(errorText(failure))
       if (failure instanceof OfficeError && failure.code === 'STALE_VERSION') {
-        try { await refresh() } catch { /* Preserve the original conflict. */ }
+        try {
+          await refresh()
+        } catch {
+          /* Preserve the original conflict. */
+        }
       }
-      if (['submit_quality', 'submit_receipt'].includes(action.type) && receiptDraft.current) {
+      if (
+        ['submit_quality', 'submit_receipt'].includes(action.type) &&
+        receiptDraft.current
+      ) {
         setReceiptTask(receiptDraft.current.task)
       }
     } finally {
@@ -248,7 +291,6 @@ export function OfficeApp() {
       setReceiptTask(null)
       receiptDraft.current = null
       setNotice(`已保存。${next.analysis.nextStep}`)
-      if (returnToMatter.current) navigate('matter')
       await refresh()
     } catch (failure) {
       setConfirmError(errorText(failure))
@@ -262,13 +304,17 @@ export function OfficeApp() {
       setActionBusy(false)
     }
   }
-  const giveReceipt = useCallback((task: Task) => {
-    receiptVersion.current = snapshot?.state.revision
-    setReceiptTask(task)
-    const draft = receiptDraft.current?.task.id === task.id ? receiptDraft.current : null
-    setEvidence(draft?.evidence || '')
-    setQualityResult(draft?.result || 'approved')
-  }, [snapshot?.state.revision])
+  const giveReceipt = useCallback(
+    (task: Task) => {
+      receiptVersion.current = snapshot?.state.revision
+      setReceiptTask(task)
+      const draft =
+        receiptDraft.current?.task.id === task.id ? receiptDraft.current : null
+      setEvidence(draft?.evidence || '')
+      setQualityResult(draft?.result || 'approved')
+    },
+    [snapshot?.state.revision]
+  )
   function receiptPreview() {
     if (!receiptTask || !evidence.trim()) return
     const action: Action =
@@ -305,26 +351,66 @@ export function OfficeApp() {
         <div className='w-full max-w-sm space-y-8'>
           <div className='space-y-6'>
             <div className='flex items-center gap-3'>
-              <img src={`${import.meta.env.BASE_URL}brand/logo-mark-aihuashen.svg`} alt='爱化身标识' width={36} height={36} className='size-9 dark:invert' />
-              <img src={`${import.meta.env.BASE_URL}brand/logo-wordmark-aihuashen.svg`} alt='AiHuaShen' width={142} height={19} className='w-[142px] dark:invert' />
+              <img
+                src={`${import.meta.env.BASE_URL}brand/logo-mark-aihuashen.svg`}
+                alt='爱化身标识'
+                width={36}
+                height={36}
+                className='size-9 dark:invert'
+              />
+              <img
+                src={`${import.meta.env.BASE_URL}brand/logo-wordmark-aihuashen.svg`}
+                alt='AiHuaShen'
+                width={142}
+                height={19}
+                className='w-[142px] dark:invert'
+              />
             </div>
             <div>
-              <h1 className='text-2xl font-semibold tracking-tight'>龙盛办公协同</h1>
-              <p className='mt-3 text-sm leading-6 text-muted-foreground'>输入访问码，进入办公协同。</p>
+              <h1 className='text-2xl font-semibold tracking-tight'>
+                龙盛办公协同
+              </h1>
+              <p className='mt-3 text-sm leading-6 text-muted-foreground'>
+                输入访问码，进入办公协同。
+              </p>
             </div>
           </div>
-          <form className='space-y-4' onSubmit={(event) => { event.preventDefault(); void enterDemo() }}>
+          <form
+            className='space-y-4'
+            onSubmit={(event) => {
+              event.preventDefault()
+              void enterDemo()
+            }}
+          >
             <div className='space-y-2'>
               <Label htmlFor='office-access-code'>访问码</Label>
-              <Input id='office-access-code' type='password' value={accessCode} onChange={(event) => setAccessCode(event.target.value)} placeholder='请输入访问码' autoComplete='off' autoFocus disabled={loading} required />
+              <Input
+                id='office-access-code'
+                type='password'
+                value={accessCode}
+                onChange={(event) => setAccessCode(event.target.value)}
+                placeholder='请输入访问码'
+                autoComplete='off'
+                autoFocus
+                disabled={loading}
+                required
+              />
             </div>
-            <ErrorNotice message={error.includes('ACCESS_REQUIRED') ? '' : error} />
-            <Button className='w-full' type='submit' disabled={loading || !accessCode.trim()}>
+            <ErrorNotice
+              message={error.includes('ACCESS_REQUIRED') ? '' : error}
+            />
+            <Button
+              className='w-full'
+              type='submit'
+              disabled={loading || !accessCode.trim()}
+            >
               {loading && <Loader2 className='size-4 animate-spin' />}
               进入工作台
             </Button>
           </form>
-          <p className='text-xs leading-5 text-muted-foreground'>本演示使用合成业务样例。</p>
+          <p className='text-xs leading-5 text-muted-foreground'>
+            本演示使用合成业务样例。
+          </p>
         </div>
       </main>
     )
@@ -371,7 +457,13 @@ export function OfficeApp() {
       <Main className='flex flex-1 flex-col gap-6'>
         <div className='flex flex-wrap items-end justify-between gap-4'>
           <div>
-            <h1 className={page === 'matter' ? 'text-sm text-muted-foreground' : 'text-2xl font-semibold tracking-tight'}>
+            <h1
+              className={
+                page === 'matter'
+                  ? 'text-sm text-muted-foreground'
+                  : 'text-2xl font-semibold tracking-tight'
+              }
+            >
               {currentPage.label}
             </h1>
           </div>
@@ -412,7 +504,9 @@ export function OfficeApp() {
         {snapshot && (
           <div className={loading ? 'pointer-events-none opacity-60' : ''}>
             {page === 'home' && <Home snapshot={snapshot} {...businessProps} />}
-            {page === 'matter' && <Matter snapshot={snapshot} {...businessProps} />}
+            {page === 'matter' && (
+              <Matter snapshot={snapshot} {...businessProps} />
+            )}
             {page === 'assistant' && (
               <Assistant
                 key={`${snapshot.workspaceId}:${snapshot.state.matter.id}:${role}:${config?.mode}`}
@@ -420,11 +514,14 @@ export function OfficeApp() {
                 snapshot={snapshot}
                 config={config}
                 history={history}
-                question={question}
-                setQuestion={setQuestion}
+                session={assistantSession}
+                updateSession={updateAssistantSession}
                 refresh={refresh}
                 openSource={openSource}
-                propose={(action, expectedVersion) => void propose(action, expectedVersion)}
+                sources={sources}
+                propose={(action, expectedVersion) =>
+                  void propose(action, expectedVersion)
+                }
                 openSettings={() => navigate('settings')}
                 giveReceipt={giveReceipt}
                 viewMatter={() => navigate('matter')}
@@ -469,11 +566,20 @@ export function OfficeApp() {
         </SheetContent>
       </Sheet>
       <ActionSheet
-        preview={preview} snapshot={snapshot} busy={actionBusy} error={confirmError}
-        sources={sources} openSource={openSource}
-        close={() => { setPreview(null); setConfirmError('') }}
+        preview={preview}
+        snapshot={snapshot}
+        busy={actionBusy}
+        error={confirmError}
+        sources={sources}
+        openSource={openSource}
+        close={() => {
+          setPreview(null)
+          setConfirmError('')
+        }}
         confirm={() => void confirm()}
-        recheck={() => { if (preview) void propose(preview.action) }}
+        recheck={() => {
+          if (preview) void propose(preview.action)
+        }}
         viewMatter={() => navigate('matter')}
       />
       <Sheet
@@ -490,7 +596,10 @@ export function OfficeApp() {
                 : '提交部门处理回执'}
             </SheetTitle>
             <SheetDescription>
-              SUP-001 · M-01 · {receiptTask?.id === 'T-QA' ? '供应商 B · 发起依据 DEC-02' : receiptTask?.title}
+              SUP-001 · M-01 ·{' '}
+              {receiptTask?.id === 'T-QA'
+                ? '供应商 B · 发起依据 DEC-02'
+                : receiptTask?.title}
             </SheetDescription>
           </SheetHeader>
           <div className='flex-1 space-y-4 px-4'>
@@ -511,7 +620,9 @@ export function OfficeApp() {
             )}
             <div className='space-y-2'>
               <Label htmlFor='office-evidence'>
-                {receiptTask?.id === 'T-QA' ? '核验凭据与处理说明' : '处理说明与凭据（必填）'}
+                {receiptTask?.id === 'T-QA'
+                  ? '核验凭据与处理说明'
+                  : '处理说明与凭据（必填）'}
               </Label>
               <Textarea
                 id='office-evidence'

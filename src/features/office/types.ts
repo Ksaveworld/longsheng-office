@@ -1,4 +1,5 @@
 import type { OfficeGraphData } from './graph'
+
 export type Role = 'procurement' | 'quality' | 'sales' | 'lead'
 export type Page = 'home' | 'assistant' | 'matter' | 'settings'
 export type Action = { type: string; [key: string]: unknown }
@@ -15,7 +16,11 @@ export type Task = {
   status: string
   attempts: number
   workStatus?: 'pending' | 'in_progress' | 'awaiting_review' | 'completed'
-  delivery?: { status: 'pending' | 'sent' | 'failed'; attempts: number; error?: string }
+  delivery?: {
+    status: 'pending' | 'sent' | 'failed'
+    attempts: number
+    error?: string
+  }
   receipt?: unknown
   qualityResult?: string
 }
@@ -35,6 +40,29 @@ export type OfficeState = {
     status: string
     supplierId: string
     materialId: string
+    closedAt?: string
+    planSelection?: {
+      supplierId: 'A' | 'B'
+      selectedBy: Role
+      selectedAt: string
+      revision: number
+      reason: string
+    }
+    followupApproval?: {
+      approvedBy: Role
+      approvedAt: string
+      riskCount: number
+      sourceId: string
+      reason: string
+    }
+    review?: {
+      reviewedBy: Role
+      reviewedAt: string
+      receiptTaskIds: string[]
+      decisionId: string
+      supplierId: string
+      riskCount: number
+    }
   }
   suppliers: {
     id: string
@@ -57,6 +85,8 @@ export type OfficeState = {
   failNextDelivery: boolean
 }
 export type Analysis = {
+  executionApproved: boolean
+  executionSupplierId?: string
   pendingActionCount: number
   missingReceipts: string[]
   canClose: boolean
@@ -115,7 +145,14 @@ export type Run = {
   status: 'completed' | 'failed'
   answer: string
   sources: Source[]
-  toolCalls: { name: string; args: unknown; result: unknown; startedAt?: string; completedAt?: string; latencyMs?: number }[]
+  toolCalls: {
+    name: string
+    args: unknown
+    result: unknown
+    startedAt?: string
+    completedAt?: string
+    latencyMs?: number
+  }[]
   proposal?: Action
   model: string
   revision: number
@@ -136,6 +173,16 @@ export type Comparison = {
   ontology: Run
 }
 export type History = { runs: Run[]; comparisons: Comparison[] }
+export type AssistantSession = {
+  question: string
+  planReason: string
+  run: Run | null
+  historical: boolean
+  busy: boolean
+  error: string
+  failedQuestion: string
+  snapshotReady: boolean
+}
 export const roleNames: Record<Role, string> = {
   procurement: '采购经办',
   quality: '质量负责人',
