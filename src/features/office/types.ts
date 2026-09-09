@@ -14,6 +14,8 @@ export type Task = {
   assignee: Role
   status: string
   attempts: number
+  workStatus?: 'pending' | 'in_progress' | 'awaiting_review' | 'completed'
+  delivery?: { status: 'pending' | 'sent' | 'failed'; attempts: number; error?: string }
   receipt?: unknown
   qualityResult?: string
 }
@@ -55,6 +57,9 @@ export type OfficeState = {
   failNextDelivery: boolean
 }
 export type Analysis = {
+  pendingActionCount: number
+  missingReceipts: string[]
+  canClose: boolean
   linkedCount: number
   riskCount: number
   nextStep: string
@@ -145,6 +150,7 @@ export const statusNames: Record<string, string> = {
   rejected: '未通过',
   effective: '当前有效',
   conditional: '有条件备选',
+  fulfilled: '条件已落实',
   superseded: '已被替代',
   pending_confirmation: '待确认',
   pending_delivery: '待发送',

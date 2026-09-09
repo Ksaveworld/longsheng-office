@@ -13,7 +13,8 @@ import {
 } from '@/components/ui/select'
 import { officeApi, errorText } from './api'
 import { Section, ErrorNotice } from './shared'
-import type { Action, ModelConfig, Role, Snapshot } from './types'
+import { ReviewPanel } from './review-panel'
+import type { Action, History, ModelConfig, Role, Snapshot, Source } from './types'
 
 type Props = {
   snapshot: Snapshot
@@ -22,6 +23,8 @@ type Props = {
   busy: boolean
   propose: (action: Action) => void
   refresh: () => Promise<void>
+  history: History
+  openSource: (source: Source) => void
 }
 export function Settings({
   snapshot,
@@ -30,6 +33,8 @@ export function Settings({
   busy,
   propose,
   refresh,
+  history,
+  openSource,
 }: Props) {
   const [day, setDay] = useState(
     String(
@@ -102,6 +107,7 @@ export function Settings({
     }
   }
   return (
+    <div className='space-y-6'>
     <div className='grid items-start gap-6 xl:grid-cols-2'>
       <div className='space-y-6'>
         <Section title='样例数据与故障演示'>
@@ -193,13 +199,14 @@ export function Settings({
         <Section title='接入范围'>
           <dl className='space-y-4 text-sm'>
             <div className='flex justify-between gap-4'>
-              <dt className='text-muted-foreground'>数据与任务</dt>
-              <dd>演示后台实际执行</dd>
+              <dt className='text-muted-foreground'>数据来源</dt>
+              <dd>合成业务样例</dd>
             </div>
             <div className='flex justify-between gap-4'>
               <dt className='text-muted-foreground'>任务送达</dt>
               <dd>模拟收件箱</dd>
             </div>
+            <div className='flex justify-between gap-4'><dt className='text-muted-foreground'>岗位身份</dt><dd>演示角色，未接企业账号</dd></div>
             <div className='flex justify-between gap-4'>
               <dt className='text-muted-foreground'>OA / ERP / DataOS</dt>
               <dd>未接入外部系统</dd>
@@ -221,8 +228,11 @@ export function Settings({
           </Badge>
         }
       >
+        <p className='mb-4 text-sm text-muted-foreground'>当前模式：{config?.mode === 'live' ? '真实模型调用' : '规则演示'}</p>
+        <details>
+        <summary className='cursor-pointer text-sm font-medium'>连接与运行配置</summary>
         <form
-          className='space-y-5'
+          className='mt-5 space-y-5'
           onSubmit={(event) => {
             event.preventDefault()
             void save()
@@ -326,7 +336,13 @@ export function Settings({
             保存后再测试。真实调用失败会直接显示错误，不自动伪装为规则答案。
           </p>
         </form>
+        </details>
       </Section>
+    </div>
+    <details className='rounded-lg border bg-card p-5'>
+      <summary className='cursor-pointer text-sm font-medium'>同题对比与运行记录</summary>
+      <div className='mt-5'><ReviewPanel role={role} config={config} history={history} refresh={refresh} openSource={openSource} /></div>
+    </details>
     </div>
   )
 }

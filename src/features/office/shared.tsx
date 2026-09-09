@@ -4,8 +4,8 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { statusNames, showValue, type Source, type Run } from './types'
 import { ExecutionTrace } from './execution-trace'
+import { statusNames, showValue, type Source, type Run } from './types'
 
 export function Status({ value }: { value: string }) {
   return (
@@ -68,11 +68,14 @@ export function Sources({
           key={source.id}
           variant='outline'
           size='sm'
+          className='h-auto min-h-8 max-w-full py-1.5'
           onClick={() => open(source)}
         >
-          <FileText className='size-3.5' />
-          {source.title || source.id}
-          <ArrowUpRight className='size-3.5 text-muted-foreground' />
+          <FileText className='size-3.5 shrink-0' />
+          <span className='min-w-0 text-start whitespace-normal'>
+            {source.title || source.id}
+          </span>
+          <ArrowUpRight className='size-3.5 shrink-0 text-muted-foreground' />
         </Button>
       ))}
     </div>
@@ -89,39 +92,57 @@ export function RunContent({
 }) {
   return (
     <div className='space-y-4 text-sm'>
-      <div className='flex flex-wrap items-center gap-2 text-muted-foreground'>
-        <Badge variant='outline'>
-          {run.mode === 'live' ? '模型实际调用' : '规则演示'}
-        </Badge>
-        <span>数据 v{run.revision}</span>
-        {run.mode === 'live' && (
-          <span>
-            {run.model} · {(run.latencyMs / 1000).toFixed(1)} 秒
-          </span>
-        )}
-        <span>{run.status === 'failed' ? '运行失败' : '已完成'}</span>
-      </div>
+      {run.mode === 'rules' && <Badge variant='outline'>规则演示</Badge>}
       {run.status === 'failed' && (
-        <ErrorNotice message={showValue(run.error) || '模型运行失败。'} />
+        <ErrorNotice
+          message={
+            run.error ? showValue(run.error) : '本次查询未完成，请重试。'
+          }
+        />
       )}
       {run.answer && (
         <div className='leading-7 break-words whitespace-pre-wrap'>
-          {run.answer.split(/(\*\*[^*]+\*\*|\[(?:DOC|DEMO)-[A-Z0-9-]+\])/g).map((part, index) => {
-            if (part.startsWith('**') && part.endsWith('**')) return <strong key={index} className='font-semibold'>{part.slice(2, -2)}</strong>
-            const source = part.startsWith('[') ? run.sources.find(item => item.id === part.slice(1, -1)) : undefined
-            return source ? <button key={index} className='mx-0.5 rounded bg-muted px-1 text-xs text-muted-foreground hover:text-foreground focus-visible:outline-2' onClick={() => openSource(source)} title={source.title}>{part}</button> : part
-          })}
+          {run.answer
+            .split(/(\*\*[^*]+\*\*|\[(?:DOC|DEMO)-[A-Z0-9-]+\])/g)
+            .map((part, index) => {
+              if (part.startsWith('**') && part.endsWith('**'))
+                return (
+                  <strong key={index} className='font-semibold'>
+                    {part.slice(2, -2)}
+                  </strong>
+                )
+              const source = part.startsWith('[')
+                ? run.sources.find((item) => item.id === part.slice(1, -1))
+                : undefined
+              return source ? (
+                <button
+                  key={index}
+                  className='mx-0.5 rounded bg-muted px-1 text-xs text-muted-foreground hover:text-foreground focus-visible:outline-2'
+                  onClick={() => openSource(source)}
+                  title={source.title}
+                >
+                  {part}
+                </button>
+              ) : (
+                part
+              )
+            })}
         </div>
       )}
       {!!run.sources?.length && (
         <Sources sources={run.sources} open={openSource} />
       )}
-      {run.proposal && propose && (
+      {run.status === 'completed' && run.proposal && propose && (
         <Button variant='outline' onClick={() => propose(run.proposal!)}>
-          检查待执行操作
+          查看操作预览
         </Button>
       )}
-      <a href={`${import.meta.env.BASE_URL}office#matter`} className='inline-flex text-sm underline underline-offset-4'>查看当前事项关系与回执</a>
+      <a
+        href={`${import.meta.env.BASE_URL}office#matter`}
+        className='inline-flex text-sm underline underline-offset-4'
+      >
+        查看事项与回执
+      </a>
       <ExecutionTrace run={run} />
     </div>
   )

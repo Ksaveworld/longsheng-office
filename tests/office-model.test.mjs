@@ -145,7 +145,9 @@ test('missing key fails without network; rules mode must be explicit', async () 
   const rules = await runOfficeChat({ ...input, mode: 'rules' })
   assert.equal(rules.status, 'completed')
   assert.equal(rules.mode, 'rules')
-  assert.match(rules.answer, /未调用模型/)
+  assert.equal(rules.mode, 'rules')
+  assert.equal(rules.model, '规则演示')
+  assert.match(rules.answer, /关联 2 条订单/)
 })
 
 test('timeout cancels the actual HTTP request and yields retryable failure', async t => {

@@ -5,6 +5,7 @@ import { createState, analyze, getDocuments, previewAction, applyAction } from '
 const run = (state, type, role = 'lead', args = {}) => applyAction(state, { type, ...args }, role)
 function qualityPass(state = createState()) {
   state = run(state, 'request_quality', 'procurement')
+  state = run(state, 'start_task', 'quality', { taskId: 'T-QA' })
   return run(state, 'submit_quality', 'quality', { taskId: 'T-QA', result: 'approved', evidence: '资格材料 QA-001 已核验' })
 }
 function deepFreeze(value) {
@@ -38,6 +39,7 @@ test('完整链路：预览不执行、质量通过、负责人批准、两份�
   assert.ok(getDocuments(state).some(doc => doc.id === 'DOC-DECISION-03' && doc.text.includes('QA-001')))
   state = run(state, 'start_task', 'procurement', { taskId: 'T-PUR' })
   state = run(state, 'submit_receipt', 'procurement', { taskId: 'T-PUR', evidence: '采购安排已确认' })
+  state = run(state, 'start_task', 'sales', { taskId: 'T-SALES' })
   state = run(state, 'submit_receipt', 'sales', { taskId: 'T-SALES', evidence: '两条订单交期已同步' })
   assert.equal(state.matter.status, 'open')
   state = run(state, 'close_matter')
@@ -45,7 +47,7 @@ test('完整链路：预览不执行、质量通过、负责人批准、两份�
   assert.ok(state.tasks.every(task => task.status === 'completed'))
   assert.match(analyze(state).nextStep, /不代表/)
   assert.ok(state.events.every(event => event.id && Number.isFinite(Date.parse(event.at))))
-  assert.equal(state.revision, 8)
+  assert.equal(state.revision, 10)
 })
 
 test('角色权限与资格条件由执行层校验', () => {
@@ -62,6 +64,7 @@ test('角色权限与资格条件由执行层校验', () => {
 
 test('质量拒绝后不得切换，可重开同任务且历史证据保留', () => {
   let state = run(createState(), 'request_quality', 'procurement')
+  state = run(state, 'start_task', 'quality', { taskId: 'T-QA' })
   state = run(state, 'submit_quality', 'quality', { taskId: 'T-QA', result: 'rejected', evidence: '缺少检验报告' })
   assert.throws(() => run(state, 'approve_switch'), { code: 'QUALITY_NOT_APPROVED' })
   state = run(state, 'request_quality', 'procurement')
@@ -69,6 +72,7 @@ test('质量拒绝后不得切换，可重开同任务且历史证据保留', ()
   assert.equal(state.tasks[0].history[0].receipt.evidence, '缺少检验报告')
   assert.equal(state.suppliers[1].quality, 'pending')
   assert.equal(state.tasks[0].receipt, undefined)
+  state = run(state, 'start_task', 'quality', { taskId: 'T-QA' })
   state = run(state, 'submit_quality', 'quality', { taskId: 'T-QA', result: 'approved', evidence: '补齐报告后核验通过' })
   assert.equal(previewAction(state, { type: 'approve_switch' }, 'lead').allowed, true)
 })
@@ -118,10 +122,12 @@ test('送达重试上限三次；同次批准仅第一个新任务受一次故�
 test('缺少回执或证据时不能关闭，重复审批不得新增决定或任务', () => {
   assert.throws(() => run(createState(), 'close_matter'), { code: 'CLOSE_CONDITIONS_UNMET' })
   let state = run(createState(), 'request_quality')
+  state = run(state, 'start_task', 'quality', { taskId: 'T-QA' })
   assert.throws(() => run(state, 'submit_quality', 'quality', { taskId: 'T-QA', result: 'approved', evidence: '  ' }), { code: 'EVIDENCE_REQUIRED' })
   state = run(qualityPass(), 'approve_switch')
   assert.throws(() => run(state, 'approve_switch'), { code: 'ALREADY_APPROVED' })
   assert.throws(() => run(state, 'close_matter'), { code: 'CLOSE_CONDITIONS_UNMET' })
+  state = run(state, 'start_task', 'procurement', { taskId: 'T-PUR' })
   state = run(state, 'submit_receipt', 'procurement', { taskId: 'T-PUR', evidence: '已确认' })
   assert.throws(() => run(state, 'close_matter'), { code: 'CLOSE_CONDITIONS_UNMET' })
 })

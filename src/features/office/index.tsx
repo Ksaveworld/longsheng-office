@@ -8,16 +8,7 @@ import {
   RefreshCw,
   Settings2,
 } from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import {
@@ -32,9 +23,10 @@ import {
   SheetContent,
   SheetDescription,
   SheetHeader,
+  SheetFooter,
   SheetTitle,
 } from '@/components/ui/sheet'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { ActionSheet } from './action-sheet'
 import { Textarea } from '@/components/ui/textarea'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
@@ -90,13 +82,13 @@ function readPage(): Page {
 
 export function OfficeApp() {
   const [page, setPage] = useState<Page>(readPage)
-  const [role, setRole] = useState<Role>('procurement')
+  const [role, setRole] = useState<Role>('lead')
   const roleRef = useRef(role)
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
   const [config, setConfig] = useState<ModelConfig | null>(null)
   const [sources, setSources] = useState<Source[]>([])
   const [history, setHistory] = useState<History>({ runs: [], comparisons: [] })
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [accessRequired, setAccessRequired] = useState(false)
   const [accessCode, setAccessCode] = useState('')
@@ -110,6 +102,12 @@ export function OfficeApp() {
   const [evidence, setEvidence] = useState('')
   const [qualityResult, setQualityResult] = useState('approved')
   const confirmKey = useRef('')
+  const operationLock = useRef(false)
+  const receiptDraft = useRef<{ task: Task; evidence: string; result: string } | null>(null)
+
+  useEffect(() => {
+    if (receiptTask) receiptDraft.current = { task: receiptTask, evidence, result: qualityResult }
+  }, [receiptTask, evidence, qualityResult])
 
   const refresh = useCallback(async () => {
     let next: Snapshot
@@ -135,13 +133,9 @@ export function OfficeApp() {
     setAccessRequired(false)
   }, [role])
   useEffect(() => {
-    roleRef.current = role
     let active = true
-    setLoading(true)
-    setError('')
-    setPreview(null)
-    setReceiptTask(null)
-    setNotice('')
+    // refresh only updates state after awaiting the network response.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     refresh()
       .catch((failure) => {
         if (active) setError(errorText(failure))
@@ -159,11 +153,11 @@ export function OfficeApp() {
     return () => window.removeEventListener('hashchange', changed)
   }, [])
   function navigate(next: Page) {
-    window.location.hash = next
+    window.location.assign('#' + next)
     setPage(next)
   }
   function ask(value: string) {
-    setQuestion(value)
+    if (value) setQuestion(value)
     navigate('assistant')
   }
   function openSource(value: Source) {
@@ -196,7 +190,8 @@ export function OfficeApp() {
     }
   }
   async function propose(action: Action) {
-    if (actionBusy) return
+    if (operationLock.current) return
+    operationLock.current = true
     setActionBusy(true)
     setError('')
     setConfirmError('')
@@ -206,15 +201,32 @@ export function OfficeApp() {
         action,
       })
       confirmKey.current = crypto.randomUUID()
-      setPreview(response.preview)
+      if (roleRef.current !== role) return
+      if (action.type === 'start_task' && response.preview.allowed) {
+        const next = await officeApi<Snapshot>('/confirm', role, {
+          previewId: response.preview.id,
+          expectedVersion: response.preview.revision,
+          idempotencyKey: confirmKey.current,
+        })
+        setSnapshot(next)
+        setNotice('已开始处理。')
+        await refresh()
+      } else {
+        setPreview(response.preview)
+      }
     } catch (failure) {
       setError(errorText(failure))
+      if (['submit_quality', 'submit_receipt'].includes(action.type) && receiptDraft.current) {
+        setReceiptTask(receiptDraft.current.task)
+      }
     } finally {
+      operationLock.current = false
       setActionBusy(false)
     }
   }
   async function confirm() {
-    if (!preview?.allowed || actionBusy) return
+    if (!preview?.allowed || operationLock.current) return
+    operationLock.current = true
     setActionBusy(true)
     setConfirmError('')
     try {
@@ -225,7 +237,9 @@ export function OfficeApp() {
       })
       setSnapshot(next)
       setPreview(null)
-      setNotice('操作已由演示后台保存。任务送达与完成状态请见下方记录。')
+      setReceiptTask(null)
+      receiptDraft.current = null
+      setNotice('已保存，当前事项和待办已更新。')
       await refresh()
     } catch (failure) {
       setConfirmError(errorText(failure))
@@ -235,14 +249,16 @@ export function OfficeApp() {
         /* Keep the original confirmation error visible. */
       }
     } finally {
+      operationLock.current = false
       setActionBusy(false)
     }
   }
-  function giveReceipt(task: Task) {
+  const giveReceipt = useCallback((task: Task) => {
     setReceiptTask(task)
-    setEvidence('')
-    setQualityResult('approved')
-  }
+    const draft = receiptDraft.current?.task.id === task.id ? receiptDraft.current : null
+    setEvidence(draft?.evidence || '')
+    setQualityResult(draft?.result || 'approved')
+  }, [])
   function receiptPreview() {
     if (!receiptTask || !evidence.trim()) return
     const action: Action =
@@ -262,8 +278,7 @@ export function OfficeApp() {
     void propose(action)
   }
   const currentPage = pages.find((item) => item.id === page)!
-  const businessProps = snapshot && {
-    snapshot,
+  const businessProps = {
     role,
     busy: actionBusy || loading,
     sources,
@@ -285,18 +300,18 @@ export function OfficeApp() {
             </div>
             <div>
               <h1 className='text-2xl font-semibold tracking-tight'>龙盛办公协同</h1>
-              <p className='mt-3 text-sm leading-6 text-muted-foreground'>输入访问码，进入你的独立演示空间。</p>
+              <p className='mt-3 text-sm leading-6 text-muted-foreground'>输入访问码，进入办公协同。</p>
             </div>
           </div>
           <form className='space-y-4' onSubmit={(event) => { event.preventDefault(); void enterDemo() }}>
             <div className='space-y-2'>
-              <Label htmlFor='office-access-code'>演示访问码</Label>
+              <Label htmlFor='office-access-code'>访问码</Label>
               <Input id='office-access-code' type='password' value={accessCode} onChange={(event) => setAccessCode(event.target.value)} placeholder='请输入访问码' autoComplete='off' autoFocus disabled={loading} required />
             </div>
             <ErrorNotice message={error.includes('ACCESS_REQUIRED') ? '' : error} />
             <Button className='w-full' type='submit' disabled={loading || !accessCode.trim()}>
               {loading && <Loader2 className='size-4 animate-spin' />}
-              进入演示
+              进入工作台
             </Button>
           </form>
           <p className='text-xs leading-5 text-muted-foreground'>本演示使用合成业务样例。</p>
@@ -311,22 +326,25 @@ export function OfficeApp() {
         <div className='me-auto hidden text-sm text-muted-foreground sm:block'>
           龙盛办公协同
         </div>
-        <Badge variant='outline' className='hidden md:inline-flex'>
-          合成样例
-        </Badge>
         <div className='flex items-center gap-2'>
           <Label className='hidden text-xs text-muted-foreground lg:inline'>
-            演示角色
+            当前岗位
           </Label>
           <Select
             value={role}
             onValueChange={(value) => {
               roleRef.current = value as Role
+              setLoading(true)
+              setError('')
+              setPreview(null)
+              setReceiptTask(null)
+              receiptDraft.current = null
+              setNotice('')
               setRole(value as Role)
             }}
             disabled={actionBusy || loading}
           >
-            <SelectTrigger aria-label='演示角色' className='w-36'>
+            <SelectTrigger aria-label='当前岗位' className='w-36'>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -343,12 +361,9 @@ export function OfficeApp() {
       <Main className='flex flex-1 flex-col gap-6'>
         <div className='flex flex-wrap items-end justify-between gap-4'>
           <div>
-            <h1 className='text-2xl font-bold tracking-tight'>
+            <h1 className={page === 'matter' ? 'text-sm text-muted-foreground' : 'text-2xl font-semibold tracking-tight'}>
               {currentPage.label}
             </h1>
-            <p className='mt-2 text-sm text-muted-foreground'>
-              {currentPage.description}
-            </p>
           </div>
           <Button
             variant='outline'
@@ -360,20 +375,6 @@ export function OfficeApp() {
             刷新数据
           </Button>
         </div>
-        <Tabs value={page} onValueChange={(value) => navigate(value as Page)}>
-          <TabsList className='max-w-full overflow-x-auto'>
-            {pages.map((item) => (
-              <TabsTrigger
-                key={item.id}
-                value={item.id}
-                className='px-3 sm:px-4'
-              >
-                <item.icon className='hidden size-4 sm:inline' />
-                {item.label}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
         <ErrorNotice message={error} />
         {notice && (
           <div
@@ -395,17 +396,18 @@ export function OfficeApp() {
         {!snapshot && loading && (
           <div className='flex items-center gap-3 p-8 text-sm text-muted-foreground'>
             <Loader2 className='size-4 animate-spin' />
-            正在读取演示空间…
+            正在加载…
           </div>
         )}
-        {snapshot && businessProps && (
+        {snapshot && (
           <div className={loading ? 'pointer-events-none opacity-60' : ''}>
-            {page === 'home' && <Home {...businessProps} />}
-            {page === 'matter' && <Matter {...businessProps} />}
+            {page === 'home' && <Home snapshot={snapshot} {...businessProps} />}
+            {page === 'matter' && <Matter snapshot={snapshot} {...businessProps} />}
             {page === 'assistant' && (
               <Assistant
                 key={`${role}:${config?.mode}`}
                 role={role}
+                snapshot={snapshot}
                 config={config}
                 history={history}
                 question={question}
@@ -422,6 +424,8 @@ export function OfficeApp() {
                 snapshot={snapshot}
                 role={role}
                 config={config}
+                history={history}
+                openSource={openSource}
                 busy={actionBusy}
                 propose={(action) => void propose(action)}
                 refresh={refresh}
@@ -429,10 +433,6 @@ export function OfficeApp() {
             )}
           </div>
         )}
-        <p className='mt-auto pt-3 text-xs leading-5 text-muted-foreground'>
-          独立演示空间 · 后台实际保存样例数据 · 角色与外部收件箱为模拟 ·
-          事项关闭不代表采购到货、生产完成或订单交付
-        </p>
       </Main>
       <Sheet
         open={!!source}
@@ -440,7 +440,7 @@ export function OfficeApp() {
           if (!open) setSource(null)
         }}
       >
-        <SheetContent className='flex w-full flex-col sm:max-w-2xl'>
+        <SheetContent className='z-[60] flex w-full flex-col sm:max-w-2xl'>
           <SheetHeader>
             <SheetTitle>{source?.title || '来源原文'}</SheetTitle>
             <SheetDescription>
@@ -455,107 +455,33 @@ export function OfficeApp() {
           </div>
         </SheetContent>
       </Sheet>
-      <Dialog
-        open={!!preview}
-        onOpenChange={(open) => {
-          if (!open && !actionBusy) {
-            setPreview(null)
-            setConfirmError('')
-          }
-        }}
-      >
-        <DialogContent className='max-h-[85vh] overflow-y-auto'>
-          <DialogHeader>
-            <DialogTitle>{preview?.title || '检查待执行操作'}</DialogTitle>
-            <DialogDescription>
-              请核对内容、接收岗位与处理条件。取消不会执行任何操作。
-            </DialogDescription>
-          </DialogHeader>
-          <div className='space-y-4 text-sm'>
-            <div className='flex flex-wrap gap-2'>
-              <Badge variant='outline'>数据 v{preview?.revision}</Badge>
-              <Badge variant='secondary'>
-                {preview ? roleNames[preview.role] : ''}
-              </Badge>
-              <Badge variant={preview?.allowed ? 'outline' : 'destructive'}>
-                {preview?.allowed ? '等待人工确认' : '当前不允许执行'}
-              </Badge>
-            </div>
-            <ul className='list-disc space-y-2 ps-5 leading-7'>
-              {preview?.details.map((detail, index) => (
-                <li key={index}>{detail}</li>
-              ))}
-            </ul>
-            {preview?.reason && (
-              <p className='rounded-md bg-muted p-3 leading-6'>
-                {preview.reason}
-              </p>
-            )}
-            <ErrorNotice message={confirmError} />
-            {preview &&
-              snapshot &&
-              preview.revision !== snapshot.state.revision && (
-                <p className='text-destructive'>
-                  数据已更新为 v{snapshot.state.revision}
-                  。请重新检查操作，不能使用旧预览确认。
-                </p>
-              )}
-          </div>
-          <DialogFooter>
-            <Button
-              variant='outline'
-              disabled={actionBusy}
-              onClick={() => {
-                setPreview(null)
-                setConfirmError('')
-              }}
-            >
-              取消
-            </Button>
-            {preview &&
-              (!preview.allowed ||
-                !!confirmError ||
-                preview.revision !== snapshot?.state.revision) && (
-                <Button
-                  variant='outline'
-                  disabled={actionBusy}
-                  onClick={() => void propose(preview.action)}
-                >
-                  重新检查
-                </Button>
-              )}
-            <Button
-              disabled={
-                actionBusy ||
-                !preview?.allowed ||
-                preview.revision !== snapshot?.state.revision
-              }
-              onClick={() => void confirm()}
-            >
-              {actionBusy && <Loader2 className='size-4 animate-spin' />}
-              确认执行
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-      <Dialog
+      <ActionSheet
+        preview={preview} snapshot={snapshot} busy={actionBusy} error={confirmError}
+        sources={sources} openSource={openSource}
+        close={() => { setPreview(null); setConfirmError('') }}
+        confirm={() => void confirm()}
+        recheck={() => { if (preview) void propose(preview.action) }}
+        viewMatter={() => navigate('matter')}
+      />
+      <Sheet
         open={!!receiptTask}
         onOpenChange={(open) => {
           if (!open) setReceiptTask(null)
         }}
       >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
+        <SheetContent className='flex w-full flex-col overflow-y-auto sm:max-w-xl'>
+          <SheetHeader>
+            <SheetTitle>
               {receiptTask?.id === 'T-QA'
-                ? '提交质量核验结果'
+                ? '供应商 B 质量资格核验'
                 : '提交部门处理回执'}
-            </DialogTitle>
-            <DialogDescription>
-              {receiptTask?.title} · 先填写结果，再检查并确认提交。
-            </DialogDescription>
-          </DialogHeader>
-          <div className='space-y-4'>
+            </SheetTitle>
+            <SheetDescription>
+              SUP-001 · M-01 · {receiptTask?.id === 'T-QA' ? '供应商 B · 发起依据 DEC-02' : receiptTask?.title}
+            </SheetDescription>
+          </SheetHeader>
+          <div className='flex-1 space-y-4 px-4'>
+            <ErrorNotice message={error} />
             {receiptTask?.id === 'T-QA' && (
               <div className='space-y-2'>
                 <Label>核验结果</Label>
@@ -572,7 +498,7 @@ export function OfficeApp() {
             )}
             <div className='space-y-2'>
               <Label htmlFor='office-evidence'>
-                处理说明与演示凭据（必填）
+                {receiptTask?.id === 'T-QA' ? '核验凭据与处理说明' : '处理说明与凭据（必填）'}
               </Label>
               <Textarea
                 id='office-evidence'
@@ -580,14 +506,14 @@ export function OfficeApp() {
                 onChange={(event) => setEvidence(event.target.value)}
                 placeholder={
                   receiptTask?.id === 'T-QA'
-                    ? '说明核验依据、结果及对应演示凭据…'
-                    : '说明已完成的安排或信息同步，并提供演示凭据…'
+                    ? '填写核验结论的依据与记录编号'
+                    : '填写已完成的安排、同步结果及相关记录'
                 }
                 className='min-h-32'
               />
             </div>
           </div>
-          <DialogFooter>
+          <SheetFooter>
             <Button variant='outline' onClick={() => setReceiptTask(null)}>
               取消
             </Button>
@@ -597,9 +523,9 @@ export function OfficeApp() {
             >
               检查提交内容
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
     </>
   )
 }

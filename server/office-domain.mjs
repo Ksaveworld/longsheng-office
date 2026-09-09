@@ -2,7 +2,6 @@ import { randomUUID } from 'node:crypto'
 
 const ROLES = ['procurement', 'quality', 'sales', 'lead']
 const LABELS = { procurement: '采购经办', quality: '质量负责人', sales: '销售经办', lead: '业务负责人' }
-const ACTIVE_TASK = ['delivered', 'in_progress']
 const SOURCE = '合成样例 · 独立演示后台'
 
 function fail(message, code = 'INVALID_ACTION', status = 422) {
@@ -60,8 +59,33 @@ export function analyze(state) {
       eligible: supplier.quality === 'approved' })),
     effectiveDecisionId: state.decisions.find(decision => decision.status === 'effective')?.id ?? null,
     conditionalDecisionId: state.decisions.find(decision => decision.status === 'conditional')?.id ?? null,
-    nextStep,
+    nextStep, ...closingFacts(state),
   }
+}
+
+export function closingFacts(state) {
+  const qa = state.tasks.find(task => task.id === 'T-QA')
+  const missingReceipts = ['T-PUR', 'T-SALES'].filter(id => !state.tasks.some(task => task.id === id && ['awaiting_review', 'completed'].includes(task.status) && task.receipt?.evidence?.trim()))
+  const approved = state.matter.supplierId === 'B' && state.decisions.some(decision => decision.id === 'DEC-03' && decision.status === 'effective')
+  const qualityComplete = state.suppliers.find(supplier => supplier.id === 'B').quality === 'approved' && qa?.status === 'completed' && qa.qualityResult === 'approved' && Boolean(qa.receipt?.evidence?.trim())
+  const canClose = state.matter.status !== 'closed' && approved && qualityComplete && missingReceipts.length === 0 && !state.tasks.some(task => task.status === 'delivery_failed')
+  const pendingActionCount = state.matter.status === 'closed' ? 0 : approved ? missingReceipts.length + (canClose ? 1 : 0) : 1
+  return { pendingActionCount, missingReceipts, canClose }
+}
+
+// V1 and V2 JSON records retain their original history. Legacy workflow metadata
+// remains available as historical data but never controls current actions.
+export function migrateState(state) {
+  const next = structuredClone(state)
+  for (const task of next.tasks) {
+    task.workStatus = ['in_progress', 'awaiting_review', 'completed'].includes(task.status) ? task.status : 'pending'
+    task.delivery = { status: task.status === 'delivery_failed' ? 'failed' : task.status === 'pending_delivery' ? 'pending' : 'sent', attempts: task.attempts ?? 0, ...(task.deliveryError ? { error: task.deliveryError } : {}) }
+  }
+  if (next.decisions.some(decision => decision.id === 'DEC-03')) {
+    const candidate = next.decisions.find(decision => decision.id === 'DEC-02')
+    if (candidate) candidate.status = 'fulfilled'
+  }
+  return next
 }
 
 export function getDocuments(state) {
@@ -79,6 +103,12 @@ export function getDocuments(state) {
     ['DEMO-STATE', '当前事项及业务记录（合成样例）', JSON.stringify({ revision: state.revision, matter: state.matter, suppliers: state.suppliers, orders: state.orders, decisions: state.decisions, tasks: state.tasks, events: state.events, failNextDelivery: state.failNextDelivery })],
   ]
   const approvedDecision = state.decisions.find(decision => decision.id === 'DEC-03')
+  const qualityTask = state.tasks.find(task => task.id === 'T-QA')
+  if (qualityTask?.receipt) rows.push(['QA-B-001', '质量核验记录样例', `供应商 B · M-01；结论 ${qualityTask.qualityResult}；凭据 ${qualityTask.receipt.evidence}；记录人 ${LABELS[qualityTask.receipt.actor]}；时间 ${qualityTask.receipt.at}。`])
+  for (const id of ['T-PUR', 'T-SALES']) {
+    const task = state.tasks.find(task => task.id === id)
+    if (task?.receipt) rows.push([`DOC-RECEIPT-${id}`, `${id} 处理回执`, `凭据 ${task.receipt.evidence}；记录人 ${LABELS[task.receipt.actor]}；时间 ${task.receipt.at}。`])
+  }
   if (approvedDecision) rows.push(['DOC-DECISION-03', '切换批准记录 · DEC-03', `${approvedDecision.text} 确认人：${LABELS[approvedDecision.approvedBy]}；实际记录时间：${approvedDecision.createdAt}；当前状态：${approvedDecision.status}。关联质量任务凭据：${JSON.stringify(state.tasks.find(task => task.id === 'T-QA')?.receipt ?? null)}。`])
   return rows.map(([id, title, text]) => ({ id, title, text: `[${id}] ${text}`, source: SOURCE }))
 }
@@ -106,19 +136,19 @@ function check(state, action, role) {
     case 'submit_quality':
       roleIs('quality')
       if (action.taskId !== 'T-QA') fail('质量核验必须关联任务 T-QA。')
-      if (!qa || !ACTIVE_TASK.includes(qa.status)) fail('质量任务尚未送达或已完成。', 'TASK_STATE_CONFLICT', 409)
+      if (qa?.status !== 'in_progress') fail('请先开始处理质量任务，再提交核验结果。', 'TASK_STATE_CONFLICT', 409)
       if (!['approved', 'rejected'].includes(action.result)) fail('质量结论须为通过或拒绝。')
       hasEvidence()
       return { title: '提交质量核验', details: [`供应商 B 核验结论：${action.result === 'approved' ? '通过' : '不通过'}。`, `凭据：${action.evidence.trim()}`, '此次确认不批准切换供应商。'] }
     case 'approve_switch':
       roleIs('lead')
       if (state.matter.supplierId === 'B' || state.decisions.some(decision => decision.id === 'DEC-03')) fail('供应商切换已批准。', 'ALREADY_APPROVED', 409)
-      if (supplierB.quality !== 'approved' || qa?.status !== 'completed' || qa.qualityResult !== 'approved') fail('供应商 B 尚未通过质量核验，或质量任务未完成。', 'QUALITY_NOT_APPROVED', 409)
+      if (supplierB.quality !== 'approved' || qa?.status !== 'completed' || qa.qualityResult !== 'approved' || !qa.receipt?.evidence?.trim()) fail('供应商 B 尚未通过质量核验，或缺少质量凭据。', 'QUALITY_NOT_APPROVED', 409)
       return { title: '批准切换供应商 B', details: ['依据：DEC-02 条件方案与 T-QA 通过回执。', '生成 DEC-03 为有效决定，DEC-01 保留为已替代历史。', '创建 T-PUR 交采购经办、T-SALES 交销售经办；仅模拟收件箱送达。', '不代表原料已到货或订单已交付。'] }
     case 'submit_receipt': {
       const task = taskFor(action.taskId); roleIs(task.assignee)
       if (!['T-PUR', 'T-SALES'].includes(task.id)) fail('此任务须使用质量核验操作。')
-      if (!ACTIVE_TASK.includes(task.status)) fail('仅已送达或处理中的任务可以提交回执。', 'TASK_STATE_CONFLICT', 409)
+      if (task.status !== 'in_progress') fail('请先开始处理任务，再提交回执。', 'TASK_STATE_CONFLICT', 409)
       hasEvidence()
       return { title: '提交任务回执', details: [`${task.id}：${task.title}。`, `回执：${action.evidence.trim()}`, '提交后进入待复核，由业务负责人确认事项关闭。'] }
     }
@@ -126,6 +156,7 @@ function check(state, action, role) {
       roleIs('lead')
       if (state.matter.supplierId !== 'B' || supplierB.quality !== 'approved' || qa?.status !== 'completed' || !state.decisions.some(decision => decision.id === 'DEC-03' && decision.status === 'effective')) fail('切换尚未完成审批，不能关闭事项。', 'CLOSE_CONDITIONS_UNMET', 409)
       if (!['T-PUR', 'T-SALES'].every(id => { const task = state.tasks.find(item => item.id === id); return task && ['awaiting_review', 'completed'].includes(task.status) && task.receipt?.evidence?.trim() })) fail('采购、销售回执尚未齐全，不能关闭事项。', 'CLOSE_CONDITIONS_UNMET', 409)
+      if (!closingFacts(state).canClose) fail('质量凭据或任务送达条件尚未满足，不能关闭事项。', 'CLOSE_CONDITIONS_UNMET', 409)
       return { title: '复核并关闭办公事项', details: ['复核采购安排和销售同步两份回执。', '确认后任务标记已完成，SUP-001 办公协同事项关闭。', '关闭仅表示办公协同完成，不表示采购到货、生产完成或订单交付。'] }
     case 'retry_delivery': {
       const task = taskFor(action.taskId); roleIs('procurement', 'lead', task.assignee)
@@ -161,7 +192,7 @@ export function previewAction(state, action, role) {
 
 export function applyAction(state, action, role) {
   const summary = check(state, action, role)
-  const next = action.type === 'reset' ? createState() : structuredClone(state)
+  const next = action.type === 'reset' ? createState() : migrateState(state)
   next.revision = state.revision + 1
   const at = new Date().toISOString()
   const event = (type, message) => next.events.push({ id: randomUUID(), at, type, actor: role, message })
@@ -184,8 +215,9 @@ export function applyAction(state, action, role) {
     case 'request_quality': {
       const task = next.tasks.find(item => item.id === 'T-QA')
       if (task) {
-        task.history = [...(task.history ?? []), { receipt: task.receipt, qualityResult: task.qualityResult, attempts: task.attempts, completedAt: task.completedAt }]
+        task.history = [...(task.history ?? []), { receipt: task.receipt, qualityResult: task.qualityResult, attempts: task.attempts, completedAt: task.completedAt, startedAt: task.startedAt, deliveredAt: task.deliveredAt, reopenedAt: task.reopenedAt }]
         delete task.receipt; delete task.qualityResult; delete task.completedAt
+        delete task.startedAt; delete task.deliveredAt; delete task.deliveryError
         task.attempts = 0
         task.reopenedAt = at
         next.suppliers.find(supplier => supplier.id === 'B').quality = 'pending'
@@ -201,13 +233,14 @@ export function applyAction(state, action, role) {
     case 'submit_quality': {
       const task = next.tasks.find(item => item.id === 'T-QA')
       task.status = 'completed'; task.qualityResult = action.result; task.completedAt = at
-      task.receipt = { evidence: action.evidence.trim(), at, actor: role }
+      task.receipt = { evidence: action.evidence.trim(), at, actor: role, sourceId: 'QA-B-001' }
       next.suppliers.find(supplier => supplier.id === 'B').quality = action.result
       break
     }
     case 'approve_switch':
       next.matter.supplierId = 'B'
       next.decisions.find(decision => decision.id === 'DEC-01').status = 'superseded'
+      next.decisions.find(decision => decision.id === 'DEC-02').status = 'fulfilled'
       next.decisions.push({ id: 'DEC-03', status: 'effective', supplierId: 'B', sequence: 3, sourceId: 'DOC-DECISION-03', basedOn: ['DEC-02', 'T-QA'], approvedBy: role, createdAt: at, text: '依据 DEC-02 条件方案及 T-QA 通过凭据，由业务负责人确认切换供应商 B；采购和销售分别跟进并回执。' })
       createTask('T-PUR', '确认供应商 B 的采购安排', 'procurement')
       createTask('T-SALES', '同步关联订单交期信息', 'sales')
@@ -228,6 +261,7 @@ export function applyAction(state, action, role) {
     case 'reset': break
   }
   event(action.type, [summary.title, ...summary.details].join(' '))
-  next.documents = getDocuments(next)
-  return next
+  const normalized = migrateState(next)
+  normalized.documents = getDocuments(normalized)
+  return normalized
 }

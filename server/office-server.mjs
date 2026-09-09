@@ -4,7 +4,7 @@ import { createHash, randomBytes, randomUUID, createCipheriv, createDecipheriv, 
 import { mkdirSync, readFileSync, writeFileSync, existsSync, statSync } from 'node:fs'
 import { dirname, resolve, extname, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { createState, analyze, getDocuments, previewAction, applyAction } from './office-domain.mjs'
+import { createState, analyze, getDocuments, previewAction, applyAction, migrateState } from './office-domain.mjs'
 import { runOfficeChat, testProvider } from './office-model.mjs'
 import { projectOffice, queryOfficeObjects, queryOfficeRelations } from './office-ontology.mjs'
 
@@ -42,7 +42,13 @@ export function createOfficeServer({ dbPath = resolve(root, '.office-data/office
     CREATE TABLE IF NOT EXISTS records(id TEXT PRIMARY KEY, space TEXT NOT NULL, kind TEXT NOT NULL, body TEXT NOT NULL, created TEXT NOT NULL);`)
   const busy = new Set()
   const loginAttempts = new Map()
-  const getSpace = id => { const row = db.prepare('SELECT * FROM spaces WHERE id=?').get(id); return { ...row, state: JSON.parse(row.state), settings: JSON.parse(row.settings) } }
+  const getSpace = id => {
+    const row = db.prepare('SELECT * FROM spaces WHERE id=?').get(id)
+    const state = migrateState(JSON.parse(row.state))
+    const serialized = JSON.stringify(state)
+    if (serialized !== row.state) db.prepare('UPDATE spaces SET state=? WHERE id=?').run(serialized, id)
+    return { ...row, state, settings: JSON.parse(row.settings) }
+  }
   const saveSettings = (id, settings) => db.prepare('UPDATE spaces SET settings=? WHERE id=?').run(JSON.stringify(settings), id)
   const activeProvider = settings => ({ baseUrl: settings.baseUrl, model: settings.model, apiKey: settings.encryptedKey ? unseal(settings.encryptedKey) : settings.baseUrl === defaults.baseUrl && !settings.keyRemoved ? defaults.apiKey : '' })
   const safeSettings = settings => ({ baseUrl: settings.baseUrl, model: settings.model, mode: settings.mode, keyConfigured: Boolean(activeProvider(settings).apiKey), connection: settings.connection, maxRounds: 4 })
@@ -82,7 +88,7 @@ export function createOfficeServer({ dbPath = resolve(root, '.office-data/office
         res.writeHead(200, { 'Content-Type': mime[extname(file)] || 'application/octet-stream', 'X-Content-Type-Options': 'nosniff', 'Cache-Control': extname(file) === '.html' ? 'no-cache' : 'public, max-age=3600' })
         return res.end(req.method === 'HEAD' ? undefined : readFileSync(file))
       }
-      const role = req.headers['x-demo-role'] || 'procurement'
+      const role = req.headers['x-demo-role'] || 'lead'
       if (!roles.some(item => item.id === role)) fail(403, 'INVALID_ROLE', '未知演示角色。')
       const body = req.method === 'POST' ? await readBody(req) : {}
       const route = `${req.method} ${path.slice('/api/office'.length)}`
@@ -136,8 +142,8 @@ export function createOfficeServer({ dbPath = resolve(root, '.office-data/office
           if (prior) {
             if (prior.hash !== requestHash) fail(409, 'IDEMPOTENCY_CONFLICT', '此确认编号已用于其他操作。')
             const savedResponse = JSON.parse(prior.response)
-            savedResponse.graph ??= projectOffice(savedResponse.state, savedResponse.workspaceId)
-            db.exec('COMMIT'); return json(res, 200, savedResponse)
+            const migratedResponse = snapshot({ id: savedResponse.workspaceId, state: migrateState(savedResponse.state) }, role)
+            db.exec('COMMIT'); return json(res, 200, migratedResponse)
           }
           const saved = db.prepare('SELECT * FROM previews WHERE id=? AND space=?').get(body.previewId, space.id)
           if (!saved || saved.expires < Date.now()) fail(409, 'PREVIEW_EXPIRED', '操作预览已过期，请重新预览。')

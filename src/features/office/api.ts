@@ -26,7 +26,7 @@ export async function officeApi<T>(
     data = await response.json()
   } catch {
     throw new OfficeError(
-      '服务返回了无法读取的结果，请检查演示后台。',
+      '暂时无法读取服务响应，请重试。',
       'INVALID_RESPONSE',
       response.status
     )

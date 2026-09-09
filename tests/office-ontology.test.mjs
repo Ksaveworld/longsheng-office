@@ -26,6 +26,7 @@ function assertIntegrity(graph) {
 }
 function approve(state = createState()) {
   state = applyAction(state, { type: 'request_quality' }, 'procurement')
+  state = applyAction(state, { type: 'start_task', taskId: 'T-QA' }, 'quality')
   state = applyAction(state, { type: 'submit_quality', taskId: 'T-QA', result: 'approved', evidence: '资格证书及抽检均通过' }, 'quality')
   return applyAction(state, { type: 'approve_switch' }, 'lead')
 }
@@ -73,7 +74,9 @@ test('approved switch projects actual decision replacement, responsibility and Q
 
 test('closure updates task and receipt state without claiming arrival or delivery', () => {
   let state = approve()
+  state = applyAction(state, { type: 'start_task', taskId: 'T-PUR' }, 'procurement')
   state = applyAction(state, { type: 'submit_receipt', taskId: 'T-PUR', evidence: '采购安排已确认' }, 'procurement')
+  state = applyAction(state, { type: 'start_task', taskId: 'T-SALES' }, 'sales')
   state = applyAction(state, { type: 'submit_receipt', taskId: 'T-SALES', evidence: '交期已同步' }, 'sales')
   state = applyAction(state, { type: 'close_matter' }, 'lead')
   const graph = projectOffice(state)
@@ -90,6 +93,7 @@ test('retry and repeated quality review keep one task and preserve historical ev
   state = applyAction(state, { type: 'request_quality' }, 'procurement')
   assert.equal(object(projectOffice(state), 'Task:T-QA').properties.status, 'delivery_failed')
   state = applyAction(state, { type: 'retry_delivery', taskId: 'T-QA' }, 'quality')
+  state = applyAction(state, { type: 'start_task', taskId: 'T-QA' }, 'quality')
   state = applyAction(state, { type: 'submit_quality', taskId: 'T-QA', result: 'rejected', evidence: '原证书过期' }, 'quality')
   state = applyAction(state, { type: 'request_quality' }, 'procurement')
   let graph = projectOffice(state)
@@ -97,6 +101,7 @@ test('retry and repeated quality review keep one task and preserve historical ev
   assert.equal(graph.objects.filter(item => item.type === 'Task').length, 1)
   assert.equal(object(graph, 'Receipt:T-QA:history:1').properties.evidence, '原证书过期')
   assert.equal(object(graph, 'Receipt:T-QA'), undefined)
+  state = applyAction(state, { type: 'start_task', taskId: 'T-QA' }, 'quality')
   state = applyAction(state, { type: 'submit_quality', taskId: 'T-QA', result: 'approved', evidence: '更新证书有效' }, 'quality')
   graph = projectOffice(state); assertIntegrity(graph)
   assert.equal(object(graph, 'Receipt:T-QA').properties.round, 2)
