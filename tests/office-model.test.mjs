@@ -67,7 +67,6 @@ test('baseline can retrieve all original data and has equal preview action affor
 
 test('permitted action is a preview only; caller role cannot be replaced by tool input', async t => {
   const state = createState()
-  state.workflow.analysisStep = 3
   const { provider } = await providerServer(t, (_body, n) => n === 1
     ? response(null, [call('preview_action', { action: { type: 'request_quality' }, role: 'lead' })])
     : response('质量核验请求已准备，等待人工确认。'))

@@ -4,7 +4,7 @@ import { createHash, randomBytes, randomUUID, createCipheriv, createDecipheriv, 
 import { mkdirSync, readFileSync, writeFileSync, existsSync, statSync } from 'node:fs'
 import { dirname, resolve, extname, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { createState, analyze, getDocuments, previewAction, applyAction, migrateState, getWorkflow, completeGuidedAnalysis } from './office-domain.mjs'
+import { createState, analyze, getDocuments, previewAction, applyAction } from './office-domain.mjs'
 import { runOfficeChat, testProvider } from './office-model.mjs'
 import { projectOffice, queryOfficeObjects, queryOfficeRelations } from './office-ontology.mjs'
 
@@ -42,17 +42,11 @@ export function createOfficeServer({ dbPath = resolve(root, '.office-data/office
     CREATE TABLE IF NOT EXISTS records(id TEXT PRIMARY KEY, space TEXT NOT NULL, kind TEXT NOT NULL, body TEXT NOT NULL, created TEXT NOT NULL);`)
   const busy = new Set()
   const loginAttempts = new Map()
-  const getSpace = id => {
-    const row = db.prepare('SELECT * FROM spaces WHERE id=?').get(id)
-    const state = migrateState(JSON.parse(row.state))
-    const serialized = JSON.stringify(state)
-    if (serialized !== row.state) db.prepare('UPDATE spaces SET state=? WHERE id=?').run(serialized, id)
-    return { ...row, state, settings: JSON.parse(row.settings) }
-  }
+  const getSpace = id => { const row = db.prepare('SELECT * FROM spaces WHERE id=?').get(id); return { ...row, state: JSON.parse(row.state), settings: JSON.parse(row.settings) } }
   const saveSettings = (id, settings) => db.prepare('UPDATE spaces SET settings=? WHERE id=?').run(JSON.stringify(settings), id)
   const activeProvider = settings => ({ baseUrl: settings.baseUrl, model: settings.model, apiKey: settings.encryptedKey ? unseal(settings.encryptedKey) : settings.baseUrl === defaults.baseUrl && !settings.keyRemoved ? defaults.apiKey : '' })
   const safeSettings = settings => ({ baseUrl: settings.baseUrl, model: settings.model, mode: settings.mode, keyConfigured: Boolean(activeProvider(settings).apiKey), connection: settings.connection, maxRounds: 4 })
-  const snapshot = (space, role) => ({ state: { ...space.state, documents: getDocuments(space.state) }, analysis: analyze(space.state), workflow: getWorkflow(space.state), graph: projectOffice(space.state, space.id), role, roles, workspaceId: space.id })
+  const snapshot = (space, role) => ({ state: { ...space.state, documents: getDocuments(space.state) }, analysis: analyze(space.state), graph: projectOffice(space.state, space.id), role, roles, workspaceId: space.id })
   const record = (space, kind, value) => db.prepare('INSERT INTO records VALUES(?,?,?,?,?)').run(value.id, space, kind, JSON.stringify(value), value.createdAt || new Date().toISOString())
   const safeResult = (value, secret) => secret ? JSON.parse(JSON.stringify(value).split(secret).join('[已隐藏凭据]')) : value
   const json = (res, code, body) => { res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' }); res.end(JSON.stringify(body)) }
@@ -88,7 +82,7 @@ export function createOfficeServer({ dbPath = resolve(root, '.office-data/office
         res.writeHead(200, { 'Content-Type': mime[extname(file)] || 'application/octet-stream', 'X-Content-Type-Options': 'nosniff', 'Cache-Control': extname(file) === '.html' ? 'no-cache' : 'public, max-age=3600' })
         return res.end(req.method === 'HEAD' ? undefined : readFileSync(file))
       }
-      const role = req.headers['x-demo-role'] || 'lead'
+      const role = req.headers['x-demo-role'] || 'procurement'
       if (!roles.some(item => item.id === role)) fail(403, 'INVALID_ROLE', '未知演示角色。')
       const body = req.method === 'POST' ? await readBody(req) : {}
       const route = `${req.method} ${path.slice('/api/office'.length)}`
@@ -142,8 +136,6 @@ export function createOfficeServer({ dbPath = resolve(root, '.office-data/office
           if (prior) {
             if (prior.hash !== requestHash) fail(409, 'IDEMPOTENCY_CONFLICT', '此确认编号已用于其他操作。')
             const savedResponse = JSON.parse(prior.response)
-            savedResponse.state = migrateState(savedResponse.state)
-            savedResponse.workflow ??= getWorkflow(savedResponse.state)
             savedResponse.graph ??= projectOffice(savedResponse.state, savedResponse.workspaceId)
             db.exec('COMMIT'); return json(res, 200, savedResponse)
           }
@@ -190,45 +182,6 @@ export function createOfficeServer({ dbPath = resolve(root, '.office-data/office
         delete settings.connection
         saveSettings(space.id, settings)
         return json(res, 200, safeSettings(settings))
-      }
-      if (route === 'POST /guided') {
-        if (!['lead', 'procurement'].includes(role)) fail(403, 'FORBIDDEN', '请由业务负责人或采购经办进行影响研判。')
-        const stepNumber = { impact: 1, decisions: 2, paths: 3 }[body.step]
-        if (!stepNumber || !['live', 'rules'].includes(body.mode) || !Number.isInteger(body.expectedVersion) || typeof body.idempotencyKey !== 'string' || body.idempotencyKey.length < 8 || body.idempotencyKey.length > 160) fail(422, 'INVALID_GUIDED', '缺少有效的分析步骤、运行方式、版本或请求编号。')
-        const requestHash = hash(JSON.stringify({ route: 'guided', role, step: body.step, mode: body.mode, expectedVersion: body.expectedVersion }))
-        const prior = db.prepare('SELECT * FROM idempotency WHERE space=? AND key=?').get(space.id, body.idempotencyKey)
-        if (prior) {
-          if (prior.hash !== requestHash) fail(409, 'IDEMPOTENCY_CONFLICT', '此请求编号已用于其他操作。')
-          return json(res, 200, JSON.parse(prior.response))
-        }
-        if (body.expectedVersion !== space.state.revision) fail(409, 'STALE_VERSION', '当前数据版本已更新，请重新分析后再确认。')
-        if (getWorkflow(space.state).analysisStep + 1 !== stepNumber || space.state.matter.status === 'closed') fail(409, 'GUIDED_ORDER', '请按当前处理进度继续分析。')
-        if (busy.has(space.id)) fail(409, 'MODEL_BUSY', '当前分析尚未结束，请稍候。')
-        if (busy.size >= 4) fail(429, 'MODEL_CAPACITY', '当前模型调用较多，请稍后重试。')
-        const questions = { impact: '供应商 A 延期会影响哪些订单？有几条需要处理？', decisions: '追溯两份会议决定：当前有效决定是什么，较新的候选方案是否已生效？', paths: '检查到料处置路径：继续由 A 供应与满足条件后切换 B，分别有哪些影响和尚缺条件？' }
-        const modelProvider = activeProvider(space.settings)
-        busy.add(space.id)
-        try {
-          const run = safeResult(await runOfficeChat({ state: structuredClone(space.state), question: questions[body.step], role, provider: modelProvider, variant: 'ontology', mode: body.mode, guidedStep: body.step, signal: AbortSignal.timeout(120000) }), modelProvider.apiKey)
-          db.exec('BEGIN IMMEDIATE')
-          try {
-            const current = getSpace(space.id)
-            if (current.state.revision !== body.expectedVersion) {
-              run.status = 'failed'; run.answer = ''; delete run.proposal
-              run.error = { code: 'STALE_VERSION', message: '分析期间数据已更新，本轮结果未采纳，请重新分析。' }
-            }
-            if (run.status === 'completed') {
-              current.state = completeGuidedAnalysis(current.state, body.step, run, role)
-              run.resultRevision = current.state.revision
-              db.prepare('UPDATE spaces SET state=? WHERE id=?').run(JSON.stringify(current.state), space.id)
-            }
-            record(space.id, 'run', run)
-            const response = { ...snapshot(current, role), run }
-            db.prepare('INSERT INTO idempotency VALUES(?,?,?,?)').run(space.id, body.idempotencyKey, requestHash, JSON.stringify(response))
-            db.exec('COMMIT')
-            return json(res, 200, response)
-          } catch (error) { db.exec('ROLLBACK'); throw error }
-        } finally { busy.delete(space.id) }
       }
       if (['POST /model/test', 'POST /chat', 'POST /compare'].includes(route)) {
         if (route === 'POST /model/test' && role !== 'lead') fail(403, 'FORBIDDEN', '仅业务负责人可测试连接。')

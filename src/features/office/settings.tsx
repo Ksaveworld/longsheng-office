@@ -12,17 +12,8 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { officeApi, errorText } from './api'
-import { OfficeGraph } from './graph'
-import { ReviewPanel } from './review-panel'
 import { Section, ErrorNotice } from './shared'
-import type {
-  Action,
-  History,
-  ModelConfig,
-  Role,
-  Snapshot,
-  Source,
-} from './types'
+import type { Action, ModelConfig, Role, Snapshot } from './types'
 
 type Props = {
   snapshot: Snapshot
@@ -31,8 +22,6 @@ type Props = {
   busy: boolean
   propose: (action: Action) => void
   refresh: () => Promise<void>
-  history: History
-  openSource: (source: Source) => void
 }
 export function Settings({
   snapshot,
@@ -41,8 +30,6 @@ export function Settings({
   busy,
   propose,
   refresh,
-  history,
-  openSource,
 }: Props) {
   const [day, setDay] = useState(
     String(
@@ -58,10 +45,6 @@ export function Settings({
   const [error, setError] = useState('')
   const [result, setResult] = useState('')
   const canEdit = role === 'lead'
-  const connection =
-    config?.connection && typeof config.connection === 'object'
-      ? (config.connection as { ok?: boolean; testedAt?: string })
-      : null
   const endpointChanged =
     baseUrl.trim().replace(/\/+$/, '') !==
     (config?.baseUrl || '').trim().replace(/\/+$/, '')
@@ -105,8 +88,7 @@ export function Settings({
         return
       }
       const latency =
-        typeof response.latencyMs === 'number' &&
-        Number.isFinite(response.latencyMs)
+        typeof response.latencyMs === 'number' && Number.isFinite(response.latencyMs)
           ? ` · ${(response.latencyMs / 1000).toFixed(1)} 秒`
           : ''
       setResult(
@@ -122,7 +104,7 @@ export function Settings({
   return (
     <div className='grid items-start gap-6 xl:grid-cols-2'>
       <div className='space-y-6'>
-        <Section title='场景变量'>
+        <Section title='样例数据与故障演示'>
           <div className='space-y-5 text-sm'>
             <p className='leading-6 text-muted-foreground'>
               D0
@@ -182,7 +164,7 @@ export function Settings({
                   onClick={() => propose({ type: 'arm_delivery_failure' })}
                 >
                   <FlaskConical className='size-4' />
-                  设置下一次发送失败
+                  设置一次失败
                 </Button>
                 <Badge variant='outline'>
                   {snapshot.state.failNextDelivery
@@ -232,177 +214,119 @@ export function Settings({
         </Section>
       </div>
       <Section
-        title='模型运行'
+        title='模型连接'
         aside={
           <Badge variant='outline'>
-            {connection?.ok ? '已连接' : '未连接'}
+            {config?.keyConfigured ? '已配置密钥' : '未配置密钥'}
           </Badge>
         }
       >
-        <dl className='mb-5 space-y-4 text-sm'>
-          <div className='flex justify-between gap-4'>
-            <dt className='text-muted-foreground'>模型状态</dt>
-            <dd>
-              {connection?.ok
-                ? '已连接'
-                : config?.keyConfigured
-                  ? '已配置，待检测连接'
-                  : '未连接'}
-            </dd>
+        <form
+          className='space-y-5'
+          onSubmit={(event) => {
+            event.preventDefault()
+            void save()
+          }}
+        >
+          <p className='text-sm leading-6 text-muted-foreground'>
+            使用 OpenAI
+            兼容接口。密钥只用于服务端连接，保存后不会回显或写入浏览器本地存储。
+          </p>
+          <div className='space-y-2'>
+            <Label htmlFor='office-baseurl'>API 地址</Label>
+            <Input
+              id='office-baseurl'
+              type='url'
+              value={baseUrl}
+              placeholder='https://api.example.com/v1'
+              onChange={(event) => setBaseUrl(event.target.value)}
+              disabled={!canEdit || !!pending}
+            />
           </div>
-          <div className='flex justify-between gap-4'>
-            <dt className='text-muted-foreground'>当前模式</dt>
-            <dd>{config?.mode === 'live' ? '真实模型' : '规则演示'}</dd>
+          <div className='space-y-2'>
+            <Label htmlFor='office-model'>模型名称</Label>
+            <Input
+              id='office-model'
+              value={model}
+              placeholder='供应商提供的模型标识'
+              onChange={(event) => setModel(event.target.value)}
+              disabled={!canEdit || !!pending}
+            />
           </div>
-          <div className='flex justify-between gap-4'>
-            <dt className='text-muted-foreground'>业务工具</dt>
-            <dd>按岗位权限执行</dd>
-          </div>
-          <div className='flex justify-between gap-4'>
-            <dt className='text-muted-foreground'>最近检测</dt>
-            <dd>
-              {connection?.testedAt
-                ? new Date(connection.testedAt).toLocaleString('zh-CN')
-                : '尚未检测'}
-            </dd>
-          </div>
-        </dl>
-        <details className='rounded-lg border p-4'>
-          <summary className='cursor-pointer text-sm font-medium'>
-            高级配置
-          </summary>
-          <form
-            className='mt-5 space-y-5'
-            onSubmit={(event) => {
-              event.preventDefault()
-              void save()
-            }}
-          >
-            <p className='text-sm leading-6 text-muted-foreground'>
-              使用 OpenAI
-              兼容接口。密钥只用于服务端连接，保存后不会回显或写入浏览器本地存储。
-            </p>
-            <div className='space-y-2'>
-              <Label htmlFor='office-baseurl'>API 地址</Label>
-              <Input
-                id='office-baseurl'
-                type='url'
-                value={baseUrl}
-                placeholder='https://api.example.com/v1'
-                onChange={(event) => setBaseUrl(event.target.value)}
-                disabled={!canEdit || !!pending}
-              />
-            </div>
-            <div className='space-y-2'>
-              <Label htmlFor='office-model'>模型名称</Label>
-              <Input
-                id='office-model'
-                value={model}
-                placeholder='供应商提供的模型标识'
-                onChange={(event) => setModel(event.target.value)}
-                disabled={!canEdit || !!pending}
-              />
-            </div>
-            <div className='space-y-2'>
-              <Label htmlFor='office-key'>API 密钥</Label>
-              <Input
-                id='office-key'
-                type='password'
-                autoComplete='new-password'
-                value={apiKey}
-                onChange={(event) => setApiKey(event.target.value)}
-                placeholder={
-                  endpointChanged
-                    ? '接口地址已变更，请重新填写密钥'
-                    : config?.keyConfigured
-                      ? '已保存，留空保持原密钥'
-                      : '输入密钥'
-                }
-                disabled={!canEdit || !!pending}
-              />
-              {endpointChanged && (
-                <p className='text-sm leading-6 text-muted-foreground'>
-                  API
-                  地址已变更。旧密钥不会转发到新地址，请重新输入该地址的密钥；留空保存后需要补充密钥才能真实调用。
-                </p>
-              )}
-            </div>
-            <div className='space-y-2'>
-              <Label>默认运行模式</Label>
-              <Select
-                value={mode}
-                onValueChange={(value) => setMode(value as 'live' | 'rules')}
-                disabled={!canEdit || !!pending}
-              >
-                <SelectTrigger aria-label='默认运行模式'>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value='rules'>规则演示</SelectItem>
-                  <SelectItem value='live'>真实模型调用</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <ErrorNotice message={error} />
-            {result && (
-              <p
-                role='status'
-                className='rounded-md bg-muted p-3 text-sm leading-6 break-words whitespace-pre-wrap'
-              >
-                {result}
+          <div className='space-y-2'>
+            <Label htmlFor='office-key'>API 密钥</Label>
+            <Input
+              id='office-key'
+              type='password'
+              autoComplete='new-password'
+              value={apiKey}
+              onChange={(event) => setApiKey(event.target.value)}
+              placeholder={
+                endpointChanged
+                  ? '接口地址已变更，请重新填写密钥'
+                  : config?.keyConfigured
+                    ? '已保存，留空保持原密钥'
+                    : '输入密钥'
+              }
+              disabled={!canEdit || !!pending}
+            />
+            {endpointChanged && (
+              <p className='text-sm leading-6 text-muted-foreground'>
+                API 地址已变更。旧密钥不会转发到新地址，请重新输入该地址的密钥；留空保存后需要补充密钥才能真实调用。
               </p>
             )}
-            <div className='flex flex-wrap gap-2'>
-              <Button type='submit' disabled={!canEdit || !!pending}>
-                {pending === 'save' ? (
-                  <Loader2 className='size-4 animate-spin' />
-                ) : (
-                  <Save className='size-4' />
-                )}
-                保存模型配置
-              </Button>
-              <Button
-                type='button'
-                variant='outline'
-                disabled={!canEdit || !!pending || !config?.keyConfigured}
-                onClick={() => void test()}
-              >
-                {pending === 'test' && (
-                  <Loader2 className='size-4 animate-spin' />
-                )}
-                测试已保存的连接
-              </Button>
-            </div>
-            <p className='text-xs text-muted-foreground'>
-              保存后再测试。真实调用失败会直接显示错误，不自动伪装为规则答案。
+          </div>
+          <div className='space-y-2'>
+            <Label>默认运行模式</Label>
+            <Select
+              value={mode}
+              onValueChange={(value) => setMode(value as 'live' | 'rules')}
+              disabled={!canEdit || !!pending}
+            >
+              <SelectTrigger aria-label='默认运行模式'>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value='rules'>规则演示</SelectItem>
+                <SelectItem value='live'>真实模型调用</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <ErrorNotice message={error} />
+          {result && (
+            <p
+              role='status'
+              className='rounded-md bg-muted p-3 text-sm leading-6 break-words whitespace-pre-wrap'
+            >
+              {result}
             </p>
-          </form>
-        </details>
-      </Section>
-      <div className='xl:col-span-2'>
-        <Section title='技术视图'>
-          <p className='mb-4 text-sm leading-6 text-muted-foreground'>
-            查看同一事项对应的对象目录、完整关系和模型结构，供技术交流使用。
+          )}
+          <div className='flex flex-wrap gap-2'>
+            <Button type='submit' disabled={!canEdit || !!pending}>
+              {pending === 'save' ? (
+                <Loader2 className='size-4 animate-spin' />
+              ) : (
+                <Save className='size-4' />
+              )}
+              保存模型配置
+            </Button>
+            <Button
+              type='button'
+              variant='outline'
+              disabled={!canEdit || !!pending || !config?.keyConfigured}
+              onClick={() => void test()}
+            >
+              {pending === 'test' && (
+                <Loader2 className='size-4 animate-spin' />
+              )}
+              测试已保存的连接
+            </Button>
+          </div>
+          <p className='text-xs text-muted-foreground'>
+            保存后再测试。真实调用失败会直接显示错误，不自动伪装为规则答案。
           </p>
-          <details className='rounded-lg border p-4'>
-            <summary className='cursor-pointer text-sm font-medium'>
-              展开完整本体图
-            </summary>
-            <div className='mt-5'>
-              <OfficeGraph graph={snapshot.graph} openSource={openSource} />
-            </div>
-          </details>
-        </Section>
-      </div>
-      <div className='xl:col-span-2'>
-        <Section title='演示复盘'>
-          <p className='mb-4 text-sm text-muted-foreground'>主演示结束后，按需比较模型回答、核对工具调用和历史运行。</p>
-          <details className='rounded-lg border p-4'>
-            <summary className='cursor-pointer text-sm font-medium'>展开演示复盘</summary>
-            <div className='mt-5'><ReviewPanel role={role} config={config} history={history} refresh={refresh} openSource={openSource} /></div>
-          </details>
-        </Section>
-      </div>
+        </form>
+      </Section>
     </div>
   )
 }

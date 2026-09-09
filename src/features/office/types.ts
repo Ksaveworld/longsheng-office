@@ -14,8 +14,6 @@ export type Task = {
   assignee: Role
   status: string
   attempts: number
-  workStatus?: 'pending' | 'in_progress' | 'awaiting_review' | 'completed'
-  delivery?: { status: 'pending' | 'sent' | 'failed'; attempts: number; error?: string }
   receipt?: unknown
   qualityResult?: string
 }
@@ -79,21 +77,12 @@ export type Analysis = {
   }[]
 }
 export type Snapshot = {
-  workflow: Workflow
   graph: OfficeGraphData
   state: OfficeState
   analysis: Analysis
   role: Role
   roles: { id: Role; label: string }[]
   workspaceId: string
-}
-export type Workflow = {
-  stage: 'S0' | 'S1' | 'S2' | 'S3' | 'S4' | 'S5' | 'S6'
-  label: string
-  analysisStep: 0 | 1 | 2 | 3
-  pendingActionCount: number
-  missingReceipts: string[]
-  canClose: boolean
 }
 export type Preview = {
   id: string
@@ -114,8 +103,6 @@ export type ModelConfig = {
   maxRounds: number
 }
 export type Run = {
-  resultRevision?: number
-  step?: 'impact' | 'decisions' | 'paths'
   id: string
   question: string
   mode: 'live' | 'rules'
@@ -145,10 +132,10 @@ export type Comparison = {
 }
 export type History = { runs: Run[]; comparisons: Comparison[] }
 export const roleNames: Record<Role, string> = {
-  lead: '业务负责人',
   procurement: '采购经办',
   quality: '质量负责人',
   sales: '销售经办',
+  lead: '业务负责人',
 }
 export const statusNames: Record<string, string> = {
   open: '处理中',
@@ -157,8 +144,7 @@ export const statusNames: Record<string, string> = {
   approved: '已通过',
   rejected: '未通过',
   effective: '当前有效',
-  conditional: '附条件候选方案 · 未生效',
-  fulfilled: '附条件候选方案 · 条件已落实',
+  conditional: '有条件备选',
   superseded: '已被替代',
   pending_confirmation: '待确认',
   pending_delivery: '待发送',

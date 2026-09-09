@@ -14,7 +14,6 @@ function fail(message, code = 'INVALID_ACTION', status = 422) {
 export function createState() {
   const state = {
     revision: 1,
-    workflow: { analysisStep: 0, analyses: [] },
     matter: { id: 'SUP-001', title: '供应商交期变更', status: 'open', supplierId: 'A', materialId: 'M-01' },
     suppliers: [
       { id: 'A', name: '供应商 A', arrivalDay: 6, originalDay: 3, quality: 'approved' },
@@ -48,8 +47,7 @@ export function analyze(state) {
     nextStep = followups.length === 2 && followups.every(task => ['awaiting_review', 'completed'].includes(task.status))
       ? '采购、销售回执已齐，请业务负责人复核并关闭办公事项。'
       : '请采购、销售处理各自任务并提交回执；发送失败的任务需先重试。'
-  } else if (!qa && getWorkflow(state).analysisStep < 3) nextStep = ['请先分析供应商延期的到料影响。', '请追溯两份会议记录，核对当前有效决定。', '请检查到料处置路径与尚缺条件。'][getWorkflow(state).analysisStep]
-  else if (!qa) nextStep = '请采购或业务负责人确认发起供应商 B 的质量核验任务。'
+  } else if (!qa) nextStep = '请采购或业务负责人确认发起供应商 B 的质量核验任务。'
   else if (supplierB.quality === 'rejected') nextStep = '供应商 B 质量核验未通过，不能切换；补齐依据后由采购或负责人重新发起核验。'
   else if (qa.status === 'delivery_failed') nextStep = '质量任务发送失败，请重试送达。'
   else if (supplierB.quality === 'approved' && qa.status === 'completed') nextStep = '质量核验已通过，请业务负责人审阅并确认切换方案。'
@@ -64,49 +62,6 @@ export function analyze(state) {
     conditionalDecisionId: state.decisions.find(decision => decision.status === 'conditional')?.id ?? null,
     nextStep,
   }
-}
-
-// Upgrade JSON state in place of a destructive SQLite schema migration. Historical
-// tasks prove that the old workflow had progressed; untouched spaces start at S0.
-export function migrateState(state) {
-  const next = structuredClone(state)
-  if (!next.workflow) next.workflow = { analysisStep: next.tasks.length || next.matter.supplierId === 'B' || next.matter.status === 'closed' ? 3 : 0, analyses: [], migrated: true }
-  for (const task of next.tasks) {
-    task.workStatus = ['in_progress', 'awaiting_review', 'completed'].includes(task.status) ? task.status : 'pending'
-    task.delivery = { status: task.status === 'delivery_failed' ? 'failed' : task.status === 'pending_delivery' ? 'pending' : 'sent', attempts: task.attempts ?? 0, ...(task.deliveryError ? { error: task.deliveryError } : {}) }
-  }
-  if (next.decisions.some(d => d.id === 'DEC-03')) {
-    const candidate = next.decisions.find(d => d.id === 'DEC-02')
-    if (candidate) candidate.status = 'fulfilled'
-  }
-  return next
-}
-
-export function getWorkflow(state) {
-  const analysisStep = state.workflow?.analysisStep ?? (state.tasks.length || state.matter.supplierId === 'B' || state.matter.status === 'closed' ? 3 : 0)
-  const qa = state.tasks.find(t => t.id === 'T-QA')
-  const missingReceipts = ['T-PUR', 'T-SALES'].filter(id => !state.tasks.some(t => t.id === id && ['awaiting_review', 'completed'].includes(t.status) && t.receipt?.evidence?.trim()))
-  const closed = state.matter.status === 'closed'
-  const approved = state.matter.supplierId === 'B' && state.decisions.some(d => d.id === 'DEC-03' && d.status === 'effective')
-  const stage = closed ? 'S6' : approved ? (missingReceipts.length < 2 ? 'S5' : 'S4') : state.suppliers.find(s => s.id === 'B').quality === 'rejected' ? 'S1' : qa?.status === 'completed' && qa.qualityResult === 'approved' ? 'S3' : qa ? 'S2' : analysisStep ? 'S1' : 'S0'
-  const canClose = !closed && approved && qa?.qualityResult === 'approved' && qa.status === 'completed' && missingReceipts.length === 0
-  // A delivery retry is the next action for its existing task, not an extra task.
-  const pendingActionCount = closed ? 0 : ['S4', 'S5'].includes(stage) ? missingReceipts.length + (canClose ? 1 : 0) : 1
-  return { stage, label: { S0: '待分析', S1: '处理中', S2: '待质量核验', S3: '待负责人确认', S4: '执行中', S5: '待复核', S6: '已完成' }[stage], analysisStep, pendingActionCount, missingReceipts, canClose }
-}
-
-export function completeGuidedAnalysis(state, step, run, role) {
-  const number = { impact: 1, decisions: 2, paths: 3 }[step]
-  if (!number || number !== getWorkflow(state).analysisStep + 1 || state.matter.status === 'closed') fail('请按当前处理进度继续分析。', 'GUIDED_ORDER', 409)
-  if (run.status !== 'completed' || run.revision !== state.revision || !run.sources?.length) fail('分析未成功或数据已变化，请重试。', 'ANALYSIS_INCOMPLETE', 409)
-  const next = migrateState(state)
-  next.revision++
-  next.workflow.analysisStep = number
-  next.workflow.analyses ??= []
-  next.workflow.analyses.push({ step, runId: run.id, mode: run.mode, inputRevision: state.revision, at: run.createdAt, sourceIds: run.sources.map(source => source.id) })
-  next.events.push({ id: randomUUID(), at: new Date().toISOString(), type: `analysis_${step}`, actor: role, message: `${{ impact: '影响分析', decisions: '历史决定追溯', paths: '到料处置路径比较' }[step]}已完成（${run.mode === 'live' ? '真实模型' : '规则演示'}）。`, runId: run.id, sourceIds: run.sources.map(source => source.id) })
-  next.documents = getDocuments(next)
-  return next
 }
 
 export function getDocuments(state) {
@@ -124,12 +79,6 @@ export function getDocuments(state) {
     ['DEMO-STATE', '当前事项及业务记录（合成样例）', JSON.stringify({ revision: state.revision, matter: state.matter, suppliers: state.suppliers, orders: state.orders, decisions: state.decisions, tasks: state.tasks, events: state.events, failNextDelivery: state.failNextDelivery })],
   ]
   const approvedDecision = state.decisions.find(decision => decision.id === 'DEC-03')
-  const qualityTask = state.tasks.find(task => task.id === 'T-QA')
-  if (qualityTask?.receipt) rows.push(['QA-B-001', '质量核验记录样例', `供应商 B · M-01；结论 ${qualityTask.qualityResult}；凭据 ${qualityTask.receipt.evidence}；记录人 ${LABELS[qualityTask.receipt.actor]}；时间 ${qualityTask.receipt.at}。`])
-  for (const id of ['T-PUR', 'T-SALES']) {
-    const task = state.tasks.find(task => task.id === id)
-    if (task?.receipt) rows.push([`DOC-RECEIPT-${id}`, `${id} 处理回执`, `凭据 ${task.receipt.evidence}；记录人 ${LABELS[task.receipt.actor]}；时间 ${task.receipt.at}。`])
-  }
   if (approvedDecision) rows.push(['DOC-DECISION-03', '切换批准记录 · DEC-03', `${approvedDecision.text} 确认人：${LABELS[approvedDecision.approvedBy]}；实际记录时间：${approvedDecision.createdAt}；当前状态：${approvedDecision.status}。关联质量任务凭据：${JSON.stringify(state.tasks.find(task => task.id === 'T-QA')?.receipt ?? null)}。`])
   return rows.map(([id, title, text]) => ({ id, title, text: `[${id}] ${text}`, source: SOURCE }))
 }
@@ -146,7 +95,6 @@ function check(state, action, role) {
   switch (action.type) {
     case 'request_quality':
       roleIs('procurement', 'lead')
-      if (getWorkflow(state).analysisStep < 3) fail('请先完成影响分析、决定追溯和到料处置路径比较。', 'ANALYSIS_REQUIRED', 409)
       if (state.matter.supplierId !== 'A') fail('切换已批准，无需再次创建质量核验。', 'ALREADY_APPROVED', 409)
       if (qa && !(qa.status === 'completed' && supplierB.quality === 'rejected')) fail('质量任务已存在，请处理或重试原任务。', 'TASK_EXISTS', 409)
       return { title: qa ? '重新发起质量核验' : '发起质量核验', details: ['事项 SUP-001，备选供应商 B；接收人：质量负责人。', '截止时间：切换批准前完成；到料方案为 D4。', qa ? '重开原任务 T-QA，保留上轮凭据。' : '确认后创建 T-QA，并尝试送达模拟收件箱。'] }
@@ -213,7 +161,7 @@ export function previewAction(state, action, role) {
 
 export function applyAction(state, action, role) {
   const summary = check(state, action, role)
-  const next = action.type === 'reset' ? createState() : migrateState(state)
+  const next = action.type === 'reset' ? createState() : structuredClone(state)
   next.revision = state.revision + 1
   const at = new Date().toISOString()
   const event = (type, message) => next.events.push({ id: randomUUID(), at, type, actor: role, message })
@@ -253,14 +201,13 @@ export function applyAction(state, action, role) {
     case 'submit_quality': {
       const task = next.tasks.find(item => item.id === 'T-QA')
       task.status = 'completed'; task.qualityResult = action.result; task.completedAt = at
-      task.receipt = { evidence: action.evidence.trim(), at, actor: role, sourceId: 'QA-B-001' }
+      task.receipt = { evidence: action.evidence.trim(), at, actor: role }
       next.suppliers.find(supplier => supplier.id === 'B').quality = action.result
       break
     }
     case 'approve_switch':
       next.matter.supplierId = 'B'
       next.decisions.find(decision => decision.id === 'DEC-01').status = 'superseded'
-      next.decisions.find(decision => decision.id === 'DEC-02').status = 'fulfilled'
       next.decisions.push({ id: 'DEC-03', status: 'effective', supplierId: 'B', sequence: 3, sourceId: 'DOC-DECISION-03', basedOn: ['DEC-02', 'T-QA'], approvedBy: role, createdAt: at, text: '依据 DEC-02 条件方案及 T-QA 通过凭据，由业务负责人确认切换供应商 B；采购和销售分别跟进并回执。' })
       createTask('T-PUR', '确认供应商 B 的采购安排', 'procurement')
       createTask('T-SALES', '同步关联订单交期信息', 'sales')
@@ -281,7 +228,6 @@ export function applyAction(state, action, role) {
     case 'reset': break
   }
   event(action.type, [summary.title, ...summary.details].join(' '))
-  const normalized = migrateState(next)
-  normalized.documents = getDocuments(normalized)
-  return normalized
+  next.documents = getDocuments(next)
+  return next
 }

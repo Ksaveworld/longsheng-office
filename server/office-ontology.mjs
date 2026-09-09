@@ -1,23 +1,23 @@
-import { analyze, getDocuments, getWorkflow } from './office-domain.mjs'
+import { analyze, getDocuments } from './office-domain.mjs'
 
 // The platform projection contract is reused here: typed identities, registered
 // properties and schema-checked edges. Office state remains the only writable data.
 const ROLES = { procurement: '采购经办', quality: '质量负责人', sales: '销售经办', lead: '业务负责人' }
 const STATUS = {
   open: '处理中', closed: '已关闭', approved: '通过', pending: '待核验', rejected: '不通过',
-  effective: '当前有效', conditional: '附条件候选方案｜未生效', fulfilled: '条件已落实', superseded: '已被替代',
+  effective: '有效决定', conditional: '条件建议', superseded: '已被替代',
   pending_delivery: '待送达', delivered: '已送达', delivery_failed: '送达失败',
   in_progress: '处理中', awaiting_review: '待复核', completed: '已完成', historical: '历史回执',
 }
 const TYPE_DEFINITIONS = [
-  ['Matter', '办公事项', { id: '事项编号', title: '事项名称', status: '状态代码', statusLabel: '当前状态', stage: '事项阶段', pendingActionCount: '待处理动作数', supplierId: '当前供应商', materialId: '物料编号', linkedCount: '关联订单数', riskCount: '风险订单数', nextStep: '下一步', closedAt: '关闭时间' }],
+  ['Matter', '办公事项', { id: '事项编号', title: '事项名称', status: '状态代码', statusLabel: '当前状态', supplierId: '当前供应商', materialId: '物料编号', linkedCount: '关联订单数', riskCount: '风险订单数', nextStep: '下一步', closedAt: '关闭时间' }],
   ['Material', '物料', { id: '物料编号', name: '物料名称' }],
   ['Supplier', '供应商', { id: '供应商编号', name: '名称', arrivalDay: '预计到料日（D）', originalDay: '原到料日（D）', quality: '质量状态代码', qualityLabel: '质量状态', selected: '当前采用', riskCount: '方案风险订单数', eligible: '质量资格已通过' }],
   ['Order', '关联订单', { id: '订单编号', materialId: '物料编号', requiredDay: '最晚到料日（D）', arrivalDay: '当前方案到料日（D）', lateDays: '延误天数', atRisk: '存在到料风险' }],
   ['Decision', '会议与批准决定', { id: '决定编号', text: '决定内容', status: '状态代码', statusLabel: '当前效力', supplierId: '对应供应商', sequence: '先后顺序', sourceId: '原始来源编号', basedOn: '批准依据', approvedBy: '确认人角色', createdAt: '确认时间' }],
   ['Role', '演示角色', { id: '角色代码', name: '角色名称', identity: '身份说明' }],
-  ['Task', '协同任务', { id: '任务编号', title: '任务名称', assignee: '责任角色', assigneeLabel: '责任人', status: '状态代码', statusLabel: '当前状态', attempts: '本轮送达次数', deliveryError: '送达失败原因', qualityResult: '核验结论代码', qualityResultLabel: '核验结论', createdAt: '创建时间', deliveredAt: '送达时间', startedAt: '开始时间', completedAt: '完成时间', reopenedAt: '重新发起时间', reviewedBy: '复核人角色', historyCount: '历史核验轮数', workStatus: '工作状态', delivery: '消息送达状态' }],
-  ['Receipt', '处理回执', { id: '回执编号', taskId: '所属任务', evidence: '处理凭据', actor: '提交人角色', actorLabel: '提交人', at: '提交时间', status: '状态代码', statusLabel: '当前状态', qualityResult: '核验结论代码', qualityResultLabel: '核验结论', historical: '历史回执', round: '核验轮次', sourceId: '凭据来源编号' }],
+  ['Task', '协同任务', { id: '任务编号', title: '任务名称', assignee: '责任角色', assigneeLabel: '责任人', status: '状态代码', statusLabel: '当前状态', attempts: '本轮送达次数', deliveryError: '送达失败原因', qualityResult: '核验结论代码', qualityResultLabel: '核验结论', createdAt: '创建时间', deliveredAt: '送达时间', startedAt: '开始时间', completedAt: '完成时间', reopenedAt: '重新发起时间', reviewedBy: '复核人角色', historyCount: '历史核验轮数' }],
+  ['Receipt', '处理回执', { id: '回执编号', taskId: '所属任务', evidence: '处理凭据', actor: '提交人角色', actorLabel: '提交人', at: '提交时间', status: '状态代码', statusLabel: '当前状态', qualityResult: '核验结论代码', qualityResultLabel: '核验结论', historical: '历史回执', round: '核验轮次' }],
   ['Document', '来源文档', { id: '来源编号', title: '标题', text: '来源原文', source: '来源说明' }],
 ]
 const EDGE_DEFINITIONS = [
@@ -79,7 +79,7 @@ export function projectOffice(state, workspaceId = '') {
   for (const source of sources) add('Document', source.id, source.title, source, [source.id])
   for (const [id, name] of Object.entries(ROLES)) add('Role', id, name, { id, name, identity: '页面内演示角色，非企业身份认证' }, ['DOC-ROLES'])
   const matterId = add('Matter', state.matter.id, state.matter.title, {
-    ...state.matter, statusLabel: getWorkflow(state).label, stage: getWorkflow(state).stage, pendingActionCount: getWorkflow(state).pendingActionCount,
+    ...state.matter, statusLabel: STATUS[state.matter.status] ?? state.matter.status,
     linkedCount: analysis.linkedCount, riskCount: analysis.riskCount, nextStep: analysis.nextStep,
   }, ['DOC-NOTICE', 'DOC-LEDGER', 'DOC-STATE'])
   for (const materialId of new Set([state.matter.materialId, ...state.orders.map(order => order.materialId)])) {

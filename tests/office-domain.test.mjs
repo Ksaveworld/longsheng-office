@@ -1,9 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createState as createInitialState, analyze, getDocuments, previewAction, applyAction } from '../server/office-domain.mjs'
+import { createState, analyze, getDocuments, previewAction, applyAction } from '../server/office-domain.mjs'
 
-// Existing action tests start after the three verified analysis steps.
-const createState = () => { const state = createInitialState(); state.workflow.analysisStep = 3; return state }
 const run = (state, type, role = 'lead', args = {}) => applyAction(state, { type, ...args }, role)
 function qualityPass(state = createState()) {
   state = run(state, 'request_quality', 'procurement')
@@ -15,7 +13,7 @@ function deepFreeze(value) {
 }
 
 test('初始数据与来源唯一、会议先后不覆盖有效决定', () => {
-  const state = createInitialState(), report = analyze(state)
+  const state = createState(), report = analyze(state)
   assert.equal(report.linkedCount, 2); assert.equal(report.riskCount, 1)
   assert.equal(report.orders[0].lateDays, 1)
   assert.equal(report.effectiveDecisionId, 'DEC-01'); assert.equal(report.conditionalDecisionId, 'DEC-02')
