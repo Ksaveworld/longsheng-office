@@ -27,6 +27,7 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { Textarea } from '@/components/ui/textarea'
+import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ThemeSwitch } from '@/components/theme-switch'
 import { ActionSheet } from './action-sheet'
@@ -451,26 +452,11 @@ export function OfficeApp() {
   }
 
   return (
-    <div className='office-app'>
-      <header className='office-header'>
-        <a
-          href='#home'
-          onClick={() => navigate('home')}
-          className='office-brand'
-        >
-          龙盛<span> · 办公协同</span>
-        </a>
-        <nav aria-label='办公协同导航' className='office-nav'>
-          {pages.map((item) => (
-            <button
-              key={item.id}
-              aria-current={page === item.id ? 'page' : undefined}
-              onClick={() => navigate(item.id)}
-            >
-              {item.id === 'home' ? '首页' : item.label}
-            </button>
-          ))}
-        </nav>
+    <div className='office-app flex min-w-0 flex-1 flex-col'>
+      <Header fixed>
+        <div className='me-auto hidden text-sm text-muted-foreground sm:block'>
+          龙盛办公协同
+        </div>
         <div className='flex items-center gap-2'>
           <Label className='hidden text-xs text-muted-foreground lg:inline'>
             当前岗位
@@ -502,8 +488,8 @@ export function OfficeApp() {
           </Select>
         </div>
         <ThemeSwitch />
-      </header>
-      <Main className='office-main flex flex-1 flex-col gap-6'>
+      </Header>
+      <Main className='flex flex-1 flex-col gap-6'>
         <div className='flex flex-wrap items-end justify-between gap-4'>
           <div>
             <h1
@@ -592,9 +578,6 @@ export function OfficeApp() {
             )}
           </div>
         )}
-        <footer className='office-footer'>
-          合成样例演示 · 岗位及任务投递为模拟 · 关闭事项不代表实物到货或订单交付
-        </footer>
       </Main>
       <Sheet
         open={!!source}

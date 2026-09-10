@@ -161,6 +161,7 @@ try {
   await page.unroute('**/api/office/chat')
   await role('业务负责人');await pane().waitFor()
   assert.match(await pane().innerText(),/查询处理中切页/)
+  await page.waitForFunction(() => ![...document.querySelectorAll('button')].find(b => b.textContent.trim() === '发送问题')?.disabled)
   assert.equal(await button('发送问题').isDisabled(),false)
   report.checks.push('in-flight navigation and role switch retain result under original role')
 

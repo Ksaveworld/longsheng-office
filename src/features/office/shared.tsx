@@ -103,7 +103,7 @@ export function RunContent({
       {run.answer && (
         <div className='leading-7 break-words whitespace-pre-wrap'>
           {run.answer
-            .split(/(\*\*[^*]+\*\*|\[[A-Za-z][A-Za-z0-9_-]+\])/g)
+            .split(/(\*\*[^*]+\*\*|\[(?:DOC|DEMO)-[A-Z0-9-]+\])/g)
             .map((part, index) => {
               if (part.startsWith('**') && part.endsWith('**'))
                 return (
@@ -121,7 +121,7 @@ export function RunContent({
                   onClick={() => openSource(source)}
                   title={source.title}
                 >
-                  〔依据〕
+                  {part}
                 </button>
               ) : (
                 part
@@ -130,14 +130,7 @@ export function RunContent({
         </div>
       )}
       {!!run.sources?.length && (
-        <details className='rounded-lg border p-3'>
-          <summary className='cursor-pointer text-xs text-muted-foreground'>
-            查看本次分析的 {run.sources.length} 份依据
-          </summary>
-          <div className='mt-3'>
-            <Sources sources={run.sources} open={openSource} />
-          </div>
-        </details>
+        <Sources sources={run.sources} open={openSource} />
       )}
       {run.status === 'completed' && run.proposal && propose && (
         <Button variant='outline' onClick={() => propose(run.proposal!)}>

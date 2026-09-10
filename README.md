@@ -2,7 +2,7 @@
 
 [在线演示](https://preview.aihuashen.com/longsheng-office/office)
 
-当前已发布 `20260910-office-v4`，运行源码基线 `ba86669`。界面已统一为顶部导航、当前情况、决定依据、下一步和处理记录；演示收尾与重复演示说明见 [DEMO-FINISH.md](docs/DEMO-FINISH.md)。
+当前演示按用户最新要求恢复原侧边栏、爱化身 Logo、页面布局与业务表达，仅参考截图的视觉风格；演示收尾功能继续保留。修改说明见 [DEMO-FINISH.md](docs/DEMO-FINISH.md)。
 
 从供应商延期提醒出发，查询订单影响、追溯会议决定、比较供应方案，经质量核验和负责人确认，创建采购及销售任务，最后收集回执并关闭事项。
 

@@ -1,3 +1,4 @@
+/* Visual styling only. Layout, brand and business copy follow 6f154a0. */
 .office-app {
   --primary: #2453dc;
   --primary-foreground: #fff;
@@ -8,7 +9,6 @@
   --muted-foreground: #66748c;
   --foreground: #1b263b;
   --border: #dfe5ef;
-  min-height: 100vh;
   color: var(--foreground);
   background: var(--background);
   font-family: 'Microsoft YaHei', 'PingFang SC', system-ui, sans-serif;
@@ -23,155 +23,14 @@
   --primary: #82a3ff;
   --primary-foreground: #111827;
 }
-.office-header {
-  display: flex;
-  align-items: center;
-  gap: 24px;
-  min-height: 64px;
-  padding: 12px 32px;
-  border-bottom: 1px solid var(--border);
+.office-app > header {
   background: var(--card);
-}
-.office-brand {
-  flex-shrink: 0;
-  font-size: 17px;
-  font-weight: 700;
-  letter-spacing: 0.03em;
-}
-.office-nav {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-right: auto;
-}
-.office-nav button {
-  padding: 10px 13px;
-  border-radius: 6px;
-  font-size: 13px;
-  color: var(--muted-foreground);
-  cursor: pointer;
-}
-.office-nav button[aria-current='page'] {
-  color: var(--primary);
-  background: color-mix(in srgb, var(--primary) 7%, transparent);
-  font-weight: 600;
-}
-.office-nav button:hover {
-  color: var(--primary);
-}
-.office-main {
-  width: 100%;
-  max-width: 1184px;
-  margin: 0 auto;
-  padding: 32px 24px 24px;
 }
 .office-app [data-slot='card'] {
   border-radius: 12px;
   background: var(--card);
   box-shadow: 0 1px 2px #172a4a05;
 }
-.office-app [data-slot='card-header'] {
-  padding: 22px 24px 0;
-}
-.office-app [data-slot='card-content'] {
-  padding: 0 24px 24px;
-}
 .office-app details {
   background: var(--card);
-}
-.office-app summary {
-  line-height: 1.6;
-}
-.office-app h1,
-.office-app h2 {
-  letter-spacing: -0.025em;
-}
-.office-footer {
-  margin-top: 16px;
-  border-top: 1px solid var(--border);
-  padding-top: 20px;
-  font-size: 11px;
-  color: var(--muted-foreground);
-  line-height: 1.8;
-}
-.office-facts {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-}
-.office-fact {
-  padding: 16px;
-  border-radius: 8px;
-  background: var(--muted);
-}
-.office-fact p {
-  font-size: 12px;
-  color: var(--muted-foreground);
-}
-.office-fact strong {
-  display: block;
-  font-size: 20px;
-  margin-top: 6px;
-  font-weight: 600;
-}
-.office-decision {
-  border: 1px solid var(--border);
-  border-left: 3px solid #a5afc0;
-  border-radius: 8px;
-  padding: 16px;
-}
-.office-decision[data-effective='true'] {
-  border-left-color: #16b873;
-}
-.office-timeline {
-  border-left: 1px solid var(--border);
-  margin-left: 5px;
-  padding-left: 22px;
-}
-.office-timeline li {
-  position: relative;
-  padding-bottom: 20px;
-}
-.office-timeline li:before {
-  content: '';
-  position: absolute;
-  width: 8px;
-  height: 8px;
-  background: var(--card);
-  border: 2px solid #8ea1bd;
-  border-radius: 50%;
-  left: -27px;
-  top: 7px;
-}
-@media (max-width: 760px) {
-  .office-header {
-    padding: 12px 16px;
-    gap: 12px;
-    flex-wrap: wrap;
-  }
-  .office-nav {
-    order: 3;
-    width: 100%;
-    justify-content: space-between;
-    margin: 0;
-  }
-  .office-nav button {
-    padding: 8px 10px;
-  }
-  .office-brand {
-    margin-right: auto;
-    font-size: 15px;
-  }
-  .office-main {
-    padding: 24px 16px;
-  }
-  .office-facts {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .office-app [data-slot='card-header'] {
-    padding: 18px 18px 0;
-  }
-  .office-app [data-slot='card-content'] {
-    padding: 0 18px 18px;
-  }
 }

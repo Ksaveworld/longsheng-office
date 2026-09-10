@@ -1,4 +1,10 @@
-import { AlertCircle, ArrowRight, CheckCircle2 } from 'lucide-react'
+import {
+  AlertCircle,
+  ArrowRight,
+  CheckCircle2,
+  Clock3,
+  Link2,
+} from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -596,7 +602,7 @@ export function Home(props: BusinessProps) {
               <ArrowRight className='size-4' />
             </Button>
             <Button variant='outline' onClick={viewMatter}>
-              {closed ? '查看事项记录' : '查看事项详情'}
+              {closed ? '查看事项记录' : '进入事项处理'}
             </Button>
           </div>
         </div>
@@ -736,214 +742,206 @@ export function Matter(props: BusinessProps) {
   const { snapshot, sources, openSource, ask } = props
   const { state, analysis } = snapshot
   const current = situation(snapshot)
-  const supplierA = state.suppliers.find((s) => s.id === 'A')
-  const active = state.suppliers.find((s) => s.id === state.matter.supplierId)
-  const supplierB = state.suppliers.find((s) => s.id === 'B')
-  const sourceFor = (id: string): Source =>
-    sources.find((s) => s.id === id) ?? { id, title: '来源原文' }
-  const decisions = [...state.decisions].sort(
-    (a, b) =>
-      Number(b.status === 'effective') - Number(a.status === 'effective')
+  const supplierA = state.suppliers.find((supplier) => supplier.id === 'A')
+  const effective = state.decisions.find(
+    (decision) => decision.id === analysis.effectiveDecisionId
   )
+  const sourceFor = (id: string, title: string): Source =>
+    sources.find((source) => source.id === id) ?? { id, title }
   return (
-    <div className='space-y-5'>
-      <Button
-        variant='ghost'
-        className='h-auto p-0 text-muted-foreground'
-        onClick={() => ask('')}
-      >
-        返回业务助手
-      </Button>
-      <div className='flex flex-wrap items-start justify-between gap-4 pb-2'>
-        <div className='space-y-3'>
-          <div className='flex flex-wrap items-center gap-3'>
-            <h2 className='text-2xl font-semibold'>
-              物料 {state.matter.materialId} 供应商延期协同
-            </h2>
-            <Badge variant='secondary'>{current.label}</Badge>
-          </div>
-          <p className='max-w-3xl text-sm leading-7 text-muted-foreground'>
-            供应商 A 从 D{supplierA?.originalDay} 延至 D{supplierA?.arrivalDay}
-            ；{current.waiting}。
-          </p>
+    <div className='space-y-6'>
+      <div className='flex flex-wrap items-center justify-between gap-3 border-b pb-4'>
+        <div className='flex flex-wrap items-center gap-3'>
+          <h2 className='text-xl font-semibold tracking-tight'>
+            供应商交期变更
+          </h2>
+          <span className='font-mono text-sm text-muted-foreground'>
+            {state.matter.id}
+          </span>
+          <Badge variant='outline'>{current.label}</Badge>
+          <span className='text-sm text-muted-foreground'>
+            原料 {state.matter.materialId}
+          </span>
         </div>
-        <div className='rounded-xl border bg-card px-5 py-3'>
-          <p className='text-xs text-muted-foreground'>当前方案到料风险</p>
-          <p
-            className={
-              'mt-1 text-2xl font-semibold ' +
-              (analysis.riskCount ? 'text-destructive' : 'text-emerald-600')
-            }
-          >
-            {analysis.riskCount} <span className='text-sm'>条</span>
-          </p>
-        </div>
+        <Button variant='ghost' size='sm' onClick={() => ask('')}>
+          返回业务助手
+          <ArrowRight className='size-4' />
+        </Button>
       </div>
-      <Section
-        title='发生了什么'
-        aside={<span className='text-xs text-muted-foreground'>当前情况</span>}
-      >
-        <div className='office-facts'>
-          <div className='office-fact'>
-            <p>原供应计划</p>
-            <strong>A · D{supplierA?.originalDay}</strong>
-          </div>
-          <div className='office-fact'>
-            <p>当前方案预计到料</p>
-            <strong>
-              {active?.id} · D{active?.arrivalDay}
-            </strong>
-          </div>
-          <div className='office-fact'>
-            <p>{state.matter.supplierId === 'B' ? '已执行方案' : '备选方案'}</p>
-            <strong>B · D{supplierB?.arrivalDay}</strong>
-            <p className='mt-2'>
-              质量：
-              {supplierB?.quality === 'approved'
-                ? '已通过'
-                : supplierB?.quality === 'rejected'
-                  ? '未通过'
-                  : '待核验'}
+      <div className='grid items-start gap-6 xl:grid-cols-[minmax(0,1.4fr)_minmax(300px,1fr)]'>
+        <Section title='当前情况'>
+          <div className='space-y-5 text-sm'>
+            <p className='text-base leading-7'>
+              供应商 A 到料日从 D{supplierA?.originalDay} 延至 D
+              {supplierA?.arrivalDay}
             </p>
-          </div>
-          <div className='office-fact'>
-            <p>风险订单 / 关联订单</p>
-            <strong>
-              {analysis.riskCount} / {analysis.linkedCount}
-            </strong>
-            <p className='mt-2'>
-              {analysis.orders
-                .map((o) => `${o.id} D${o.requiredDay}`)
-                .join('；')}
-            </p>
-          </div>
-        </div>
-      </Section>
-      <div className='grid items-start gap-5 lg:grid-cols-[minmax(0,1.65fr)_minmax(280px,1fr)]'>
-        <Section
-          title='为什么现在这样处理'
-          aside={
-            <span className='text-xs text-muted-foreground'>决定与依据</span>
-          }
-        >
-          <div className='space-y-3'>
-            {decisions.map((decision) => (
-              <div
-                key={decision.id}
-                className='office-decision'
-                data-effective={decision.status === 'effective'}
-              >
-                <div className='flex flex-wrap items-center gap-3'>
-                  <Status value={decision.status} />
-                  <strong>{decision.id}</strong>
-                  <Button
-                    variant='link'
-                    className='ml-auto h-auto p-0 text-xs'
-                    onClick={() => openSource(sourceFor(decision.sourceId))}
-                  >
-                    查看来源原文
-                  </Button>
-                </div>
-                <p className='mt-3 text-sm leading-7'>{decision.text}</p>
-              </div>
-            ))}
-            <p className='text-xs leading-6 text-muted-foreground'>
-              新的条件建议不会自动替代当前有效决定；方案选择与负责人批准分别留档。
-            </p>
-          </div>
-        </Section>
-        <Section
-          title={
-            state.matter.status === 'closed'
-              ? '本事项已完成复核'
-              : current.label
-          }
-          aside={<span className='text-xs text-muted-foreground'>下一步</span>}
-        >
-          <p className='text-sm leading-7'>{current.detail}</p>
-          <p className='mt-3 text-sm leading-7 text-muted-foreground'>
-            {current.waiting}
-          </p>
-          {analysis.executionApproved && (
-            <div className='mt-5 divide-y border-y'>
-              {['T-PUR', 'T-SALES'].map((id) => {
-                const task = state.tasks.find((t) => t.id === id)
-                return (
-                  <div
-                    key={id}
-                    className='flex justify-between gap-3 py-3 text-sm'
-                  >
-                    <span>{id === 'T-PUR' ? '采购任务' : '销售任务'}</span>
-                    <span className='text-muted-foreground'>
-                      {task
-                        ? taskLabel(task, state.matter.status === 'closed')
-                        : '待创建'}
-                    </span>
-                  </div>
-                )
-              })}
+            <div className='flex flex-wrap gap-x-6 gap-y-2 text-muted-foreground'>
+              <span>
+                关联{' '}
+                <strong className='text-foreground'>
+                  {analysis.linkedCount}
+                </strong>{' '}
+                条订单
+              </span>
+              <span>
+                当前方案{' '}
+                <strong
+                  className={
+                    analysis.riskCount ? 'text-destructive' : 'text-foreground'
+                  }
+                >
+                  {analysis.riskCount}
+                </strong>{' '}
+                条到料风险
+              </span>
             </div>
-          )}
-          <Button className='mt-5 w-full' onClick={() => ask('')}>
-            返回助手继续办理
-            <ArrowRight className='size-4' />
-          </Button>
-          <p className='mt-3 text-xs leading-6 text-muted-foreground'>
-            此页回顾全过程；选择、核验、回执及最终确认在助手中完成。
+            <div className='border-t pt-4'>
+              <p className='text-xs text-muted-foreground'>当前有效决定</p>
+              <p className='mt-2 font-medium'>
+                {analysis.effectiveDecisionId} · 由供应商{' '}
+                {state.matter.supplierId} 供货
+              </p>
+              <p className='mt-2 leading-6 text-muted-foreground'>
+                {effective?.text}
+              </p>
+              {effective && (
+                <Button
+                  variant='link'
+                  className='mt-2 h-auto p-0 text-sm'
+                  onClick={() =>
+                    openSource(sourceFor(effective.sourceId, '有效决定原文'))
+                  }
+                >
+                  查看决定依据
+                </Button>
+              )}
+            </div>
+            <div className='border-t pt-4'>
+              <p className='text-xs text-muted-foreground'>当前责任</p>
+              <p className='mt-2 leading-6'>{current.waiting}</p>
+            </div>
+          </div>
+        </Section>
+        <Section title='事项回顾'>
+          <p className='text-sm leading-7 text-muted-foreground'>
+            在这里回顾延期原因、方案选择、会议依据与部门处理记录。办理操作和最终复核统一在业务助手中完成。
           </p>
+          <Button className='mt-4' onClick={() => ask('')}>
+            返回助手继续办理
+          </Button>
         </Section>
       </div>
-      <Section
-        title='处理记录'
-        aside={<span className='text-xs text-muted-foreground'>历史轨迹</span>}
-      >
-        <ol className='office-timeline text-sm leading-6'>
-          <li>
-            供应商 A 到料从 D{supplierA?.originalDay} 延至 D
-            {supplierA?.arrivalDay}
-          </li>
-          <li>DEC-01：原供应商 A 方案生效</li>
-          <li>DEC-02：提出 B 备选方案，需质量核验及负责人批准</li>
-          {state.events.map((event) => (
-            <li key={event.id}>
-              <p>{event.message}</p>
-              <p className='mt-1 text-xs text-muted-foreground'>
-                {roleNames[event.actor as Role] || event.actor} ·{' '}
-                {new Date(event.at).toLocaleString('zh-CN')}
-              </p>
-            </li>
-          ))}
-        </ol>
-      </Section>
       <ReviewSummary
         snapshot={snapshot}
         sources={sources}
         openSource={openSource}
       />
-      <details className='rounded-xl border p-5'>
+      <Section
+        title='任务与回执'
+        aside={
+          <span className='text-xs text-muted-foreground'>
+            {analysis.pendingActionCount} 项待处理动作
+          </span>
+        }
+      >
+        <Tasks {...props} readOnly />
+      </Section>
+      <Paths snapshot={snapshot} />
+      <Section title='决定与来源'>
+        <div className='divide-y'>
+          {state.decisions.map((decision) => (
+            <div
+              key={decision.id}
+              className='space-y-3 py-4 first:pt-0 last:pb-0'
+            >
+              <div className='flex flex-wrap items-center gap-3'>
+                <span className='font-mono text-sm'>{decision.id}</span>
+                <Status value={decision.status} />
+                <span className='text-xs text-muted-foreground'>
+                  {decision.id === 'DEC-01'
+                    ? '第一次会议'
+                    : decision.id === 'DEC-02'
+                      ? '第二次会议'
+                      : '负责人批准记录'}
+                </span>
+              </div>
+              <p className='text-sm leading-7'>{decision.text}</p>
+              <Button
+                variant='link'
+                className='h-auto p-0 text-sm'
+                onClick={() =>
+                  openSource(
+                    sourceFor(decision.sourceId, decision.id + ' 来源原文')
+                  )
+                }
+              >
+                查看来源原文
+              </Button>
+            </div>
+          ))}
+        </div>
+      </Section>
+      <details className='rounded-lg border p-5'>
         <summary className='cursor-pointer text-sm font-semibold'>
-          到料方案与部门任务明细
+          关联订单与影响依据
         </summary>
         <div className='mt-5 space-y-5'>
-          <Paths snapshot={snapshot} />
-          <Section title='部门任务'>
-            <Tasks {...props} readOnly />
-          </Section>
           <Orders snapshot={snapshot} />
-        </div>
-      </details>
-      <details className='rounded-xl border p-5'>
-        <summary className='cursor-pointer text-sm font-semibold'>
-          原始资料与会议依据
-        </summary>
-        <div className='mt-5'>
+          <div className='space-y-2'>
+            {analysis.orders.map((order) => (
+              <div
+                key={order.id}
+                className='flex items-start gap-2 rounded-md bg-muted/30 p-3 text-sm leading-6'
+              >
+                <Link2 className='mt-1 size-4 shrink-0 text-muted-foreground' />
+                <span>
+                  延期通知 → 供应商 A → {state.matter.materialId} → {order.id} →
+                  最迟 D{order.requiredDay} 到料
+                </span>
+              </div>
+            ))}
+          </div>
           <Sources
-            sources={sources.filter((s) => s.id !== 'DEMO-STATE')}
+            sources={sources.filter((source) =>
+              ['DOC-NOTICE', 'DOC-LEDGER', 'DOC-RULES'].includes(source.id)
+            )}
             open={openSource}
           />
         </div>
       </details>
-      <details className='rounded-xl border p-5'>
+      <details className='rounded-lg border p-5'>
+        <summary className='cursor-pointer text-sm font-semibold'>
+          处理记录与全部资料
+        </summary>
+        <div className='mt-5 space-y-6'>
+          <Sources
+            sources={sources.filter((source) => source.id !== 'DEMO-STATE')}
+            open={openSource}
+          />
+          {state.events.length ? (
+            <ol className='space-y-5'>
+              {[...state.events].reverse().map((event) => (
+                <li key={event.id} className='flex gap-3'>
+                  <Clock3 className='mt-0.5 size-4 shrink-0 text-muted-foreground' />
+                  <div>
+                    <p className='text-sm leading-6'>{event.message}</p>
+                    <p className='mt-1 text-xs text-muted-foreground'>
+                      {roleNames[event.actor as Role] || event.actor} ·{' '}
+                      {new Date(event.at).toLocaleString('zh-CN')}
+                    </p>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p className='text-sm text-muted-foreground'>尚无处理记录。</p>
+          )}
+          <p className='text-xs text-muted-foreground'>
+            数据版本 {state.revision}
+          </p>
+        </div>
+      </details>
+      <details className='rounded-lg border p-5'>
         <summary className='cursor-pointer text-sm font-semibold'>
           高级视图 · 业务关系
         </summary>
