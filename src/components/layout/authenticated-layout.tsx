@@ -1,4 +1,4 @@
-import { Outlet } from '@tanstack/react-router'
+import { Outlet, useRouterState } from '@tanstack/react-router'
 import { getCookie } from '@/lib/cookies'
 import { cn } from '@/lib/utils'
 import { LayoutProvider } from '@/context/layout-provider'
@@ -12,7 +12,12 @@ type AuthenticatedLayoutProps = {
 }
 
 export function AuthenticatedLayout({ children }: AuthenticatedLayoutProps) {
+  const pathname = useRouterState({
+    select: (state) => state.location.pathname,
+  })
+  const office = /\/office\/?$/.test(pathname)
   const defaultOpen = getCookie('sidebar_state') !== 'false'
+  if (office) return <>{children ?? <Outlet />}</>
   return (
     <SearchProvider>
       <LayoutProvider>

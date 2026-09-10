@@ -193,3 +193,13 @@ test('DeepSeek v4 uses disabled thinking; connectivity reports actual reply and 
   assert.equal(requests[0].body.max_tokens, 1800)
   assert.equal(result.reply, 'OK [REDACTED]')
 })
+
+
+test('business answers translate known technical tokens, omit tool references, and preserve real source IDs', async t => {
+  const { provider } = await providerServer(t, (_body, n) => n === 1 ? response(null, [call('search_documents')]) : response('事项 open；B pending；先 approve_keep_a，再 submit_receipt。[analyze_impact][DOC-RULES] ORD-001 DEC-01'))
+  const run = await runOfficeChat({ state: createState(), question: '下一步', role: 'lead', provider })
+  assert.equal(run.status, 'completed')
+  assert.match(run.answer, /事项 处理中；B 待核验；先 确认沿用 A 并跟进，再 提交回执/)
+  assert.doesNotMatch(run.answer, /analyze_impact|approve_keep_a|pending/)
+  assert.match(run.answer, /\[DOC-RULES\] ORD-001 DEC-01/)
+})

@@ -18,7 +18,8 @@ const server = createOfficeServer({
     apiKey: env.MODEL_API_KEY?.replaceAll('$$', '$') } : {},
 })
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
-const base = `http://127.0.0.1:${server.address().port}`
+const base = process.env.OFFICE_VERIFY_URL?.replace(/\/$/, '') || `http://127.0.0.1:${server.address().port}`
+const apiPrefix = new URL(base).pathname.replace(/\/$/, '') + '/api/office'
 const browser = await chromium.launch({ channel: 'chrome', headless: true })
 const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } })
 page.setDefaultTimeout(15000)
@@ -35,13 +36,13 @@ const ready = () => page.waitForFunction(() => {
   const b = [...document.querySelectorAll('button')].find(b => b.textContent.trim() === '刷新数据')
   return b && !b.disabled
 })
-const api = (path, body, role = 'lead') => page.evaluate(async ({ path, body, role }) => {
-  const response = await fetch('/api/office' + path, {
+const api = (path, body, role = 'lead') => page.evaluate(async ({ path, body, role, apiPrefix }) => {
+  const response = await fetch(apiPrefix + path, {
     method: body ? 'POST' : 'GET', headers: { 'Content-Type': 'application/json', 'X-Demo-Role': role },
     ...(body ? { body: JSON.stringify(body) } : {}),
   })
   return { status: response.status, body: await response.json() }
-}, { path, body, role })
+}, { path, body, role, apiPrefix })
 const snapshot = async () => (await api('/snapshot')).body
 const act = async action => {
   const p = (await api('/preview', { action })).body.preview
@@ -111,8 +112,15 @@ async function finishDepartments(supplier) {
   assert.equal(state.matter.review.receiptTaskIds.length,2)
   return state
 }
-try {
+async function visit() {
+  if (process.env.OFFICE_VERIFY_URL) {
+    const result = await page.request.post(base+'/api/office/session', {data:{accessCode:env.ACCESS_CODE?.replaceAll('$$','$')}})
+    assert.equal(result.status(),200,'public demo login')
+  }
   await page.goto(base+'/office');await ready()
+}
+try {
+  await visit()
   if(!live){await api('/model',{mode:'rules'});await page.reload();await ready()}
   await button('继续处理').click()
   assert.equal(chats,0)
@@ -187,7 +195,7 @@ try {
   assert.equal((await snapshot()).state.matter.review.supplierId,'B')
   report.checks.push('B chain entirely in assistant; both receipts visible in final confirmation; cancel/stale/double-confirm protected; reload retains review and role history')
 
-  await page.context().clearCookies();await page.goto(base+'/office');await ready()
+  await page.context().clearCookies();await visit()
   await api('/model',{mode:'rules'});await page.reload();await ready()
   await button('继续处理').click();await ask('比较 A/B，选择 A 后如何跟进？')
   await selectPlan('A')

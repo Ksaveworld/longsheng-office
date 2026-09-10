@@ -27,13 +27,13 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { Textarea } from '@/components/ui/textarea'
-import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ThemeSwitch } from '@/components/theme-switch'
 import { ActionSheet } from './action-sheet'
 import { officeApi, errorText, getOfficeSnapshot, OfficeError } from './api'
 import { Assistant } from './assistant'
 import { Home, Matter } from './business'
+import './office.css'
 import { Settings } from './settings'
 import { ErrorNotice } from './shared'
 import {
@@ -96,7 +96,41 @@ export function OfficeApp() {
   const [notice, setNotice] = useState('')
   const [assistantSessions, setAssistantSessions] = useState<
     Record<string, AssistantSession>
-  >({})
+  >(() => {
+    try {
+      const stored = JSON.parse(
+        sessionStorage.getItem('office-assistant-sessions') || '{}'
+      ) as Record<string, AssistantSession>
+      return Object.fromEntries(
+        Object.entries(stored)
+          .filter(([, value]) => value && typeof value.question === 'string')
+          .map(([key, value]) => [
+            key,
+            value.busy
+              ? {
+                  ...value,
+                  busy: false,
+                  error: '上次查询被页面刷新中断，请重试原问题。',
+                  failedQuestion: value.failedQuestion || value.question,
+                  snapshotReady: false,
+                }
+              : { ...value, historical: !!value.run, snapshotReady: false },
+          ])
+      )
+    } catch {
+      return {}
+    }
+  })
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(
+        'office-assistant-sessions',
+        JSON.stringify(assistantSessions)
+      )
+    } catch {
+      /* Storage may be unavailable; in-page sessions still work. */
+    }
+  }, [assistantSessions])
   const [source, setSource] = useState<Source | null>(null)
   const [preview, setPreview] = useState<Preview | null>(null)
   const [actionBusy, setActionBusy] = useState(false)
@@ -417,11 +451,26 @@ export function OfficeApp() {
   }
 
   return (
-    <>
-      <Header fixed>
-        <div className='me-auto hidden text-sm text-muted-foreground sm:block'>
-          龙盛办公协同
-        </div>
+    <div className='office-app'>
+      <header className='office-header'>
+        <a
+          href='#home'
+          onClick={() => navigate('home')}
+          className='office-brand'
+        >
+          龙盛<span> · 办公协同</span>
+        </a>
+        <nav aria-label='办公协同导航' className='office-nav'>
+          {pages.map((item) => (
+            <button
+              key={item.id}
+              aria-current={page === item.id ? 'page' : undefined}
+              onClick={() => navigate(item.id)}
+            >
+              {item.id === 'home' ? '首页' : item.label}
+            </button>
+          ))}
+        </nav>
         <div className='flex items-center gap-2'>
           <Label className='hidden text-xs text-muted-foreground lg:inline'>
             当前岗位
@@ -453,8 +502,8 @@ export function OfficeApp() {
           </Select>
         </div>
         <ThemeSwitch />
-      </Header>
-      <Main className='flex flex-1 flex-col gap-6'>
+      </header>
+      <Main className='office-main flex flex-1 flex-col gap-6'>
         <div className='flex flex-wrap items-end justify-between gap-4'>
           <div>
             <h1
@@ -543,6 +592,9 @@ export function OfficeApp() {
             )}
           </div>
         )}
+        <footer className='office-footer'>
+          合成样例演示 · 岗位及任务投递为模拟 · 关闭事项不代表实物到货或订单交付
+        </footer>
       </Main>
       <Sheet
         open={!!source}
@@ -650,6 +702,6 @@ export function OfficeApp() {
           </SheetFooter>
         </SheetContent>
       </Sheet>
-    </>
+    </div>
   )
 }
