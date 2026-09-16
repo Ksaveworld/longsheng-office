@@ -68,7 +68,6 @@ type ResultFacts = {
   analysis: Snapshot['analysis']
   presentation?: Snapshot['presentation']
 }
-type CurrentAction = Snapshot['presentation']['actions'][number]
 type Props = {
   role: Role
   config: ModelConfig | null
@@ -832,36 +831,6 @@ export function Assistant(props: Props) {
       </Section>
     )
   }
-  const handleAction = (action: CurrentAction) => {
-    if (busy || restoring || props.actionBusy) return
-    if (action.type === 'choose_plan') {
-      setShowPlans(true)
-
-      return
-    }
-    if (['submit_quality', 'submit_receipt'].includes(action.type)) {
-      const task = state.tasks.find(
-        (item) => item.id === action.taskId && item.assignee === role
-      )
-      if (task) props.giveReceipt(task)
-      else setError('当前任务已变化，请刷新事项后重新办理。')
-      return
-    }
-    const { label: _label, ...payload } = action
-    propose(payload, state.revision)
-  }
-  const currentActions = snapshot.presentation?.actions || []
-  const actionButton = (action: CurrentAction, primary = false) => (
-    <Button
-      key={action.type + (action.taskId || '')}
-      variant={primary ? 'default' : 'outline'}
-      disabled={busy || restoring || props.actionBusy}
-      className='h-auto min-h-9 max-w-full text-sm whitespace-normal'
-      onClick={() => handleAction(action)}
-    >
-      {action.label}
-    </Button>
-  )
   const historyContent = (
     <>
       <div className='office-history-title mb-4 flex items-center justify-between gap-2'>
@@ -1165,23 +1134,16 @@ export function Assistant(props: Props) {
               <Button
                 variant='outline'
                 disabled={restoring}
-                onClick={() => {
-                  setShowPlans(!showPlans)
-                }}
+                onClick={props.viewMatter}
               >
                 比较并选择方案
               </Button>
               <Button
                 variant='outline'
                 disabled={restoring}
-                onClick={() => {
-                  document
-                    .getElementById('current-work')
-                    ?.scrollIntoView({ block: 'nearest' })
-                  setShowPlans(false)
-                }}
+                onClick={props.viewMatter}
               >
-                继续办理当前事项
+                查看办理进度
               </Button>
             </div>
           )}
@@ -1262,41 +1224,18 @@ export function Assistant(props: Props) {
                     {snapshot.presentation.blockers[0]}
                   </p>
                 )}
-                {currentActions[0] ? (
-                  <div className='mt-4'>
-                    {actionButton(currentActions[0], true)}
-                    <p className='mt-2 text-sm leading-6 text-muted-foreground'>
-                      {['choose_plan'].includes(currentActions[0].type)
-                        ? '先核对方案依据，再记录选择意向。'
-                        : '核对本次操作内容后，由你确认。'}
-                    </p>
-                  </div>
-                ) : (
-                  <p className='mt-4 text-sm leading-6'>
-                    {snapshot.presentation?.waitingRoles.length
-                      ? `等待${snapshot.presentation.waitingRoles.map((waitingRole) => roleNames[waitingRole]).join('、')}处理，当前岗位暂无可办动作。`
-                      : state.matter.status === 'closed'
-                        ? '事项已办结，处理依据和回执已留档。'
-                        : '当前岗位暂无可办动作。'}
-                  </p>
-                )}
-                {currentActions.length > 1 && (
-                  <div className='mt-4 border-t pt-3'>
-                    <p className='text-sm'>其他可办动作</p>
-                    <div className='mt-3 flex flex-wrap gap-3'>
-                      {currentActions
-                        .slice(1)
-                        .map((action) => actionButton(action))}
-                    </div>
-                  </div>
-                )}
+                <p className='mt-3 text-sm'>
+                  {snapshot.presentation.waitingRoles.includes(role)
+                    ? '请进入事项详情核对并完成当前岗位操作。'
+                    : '你当前无需操作，可查看办理进度。'}
+                </p>
                 <Button
                   className='mt-4'
                   variant='outline'
                   size='sm'
                   onClick={props.viewMatter}
                 >
-                  查看事项与处理记录
+                  打开事项办理中心
                 </Button>
               </Section>
               <ExecutionCards

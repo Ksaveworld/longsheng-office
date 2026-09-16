@@ -679,7 +679,7 @@ function SupplyMatter(props: BusinessProps) {
         </div>
       </details>
       <Button className='h-12 w-full text-base' onClick={() => ask('')}>
-        返回业务助手继续办理
+        向业务助手询问影响与依据
         <ArrowRight className='size-4' />
       </Button>
     </div>

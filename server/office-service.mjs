@@ -6,6 +6,7 @@ import { runOfficeChat } from './office-model.mjs'
 import { presentMatter } from './office-presentation.mjs'
 import { buildOrderChains, queryOrderChain } from './office-order-chain.mjs'
 import { querySupplyOrders } from './office-supply-query.mjs'
+import { isRetiredDemoMatter, visibleMatterIds } from './office-catalog.mjs'
 
 import { eventRoles } from './office-events.mjs'
 const roles = [{ id: 'procurement', label: '采购经办' }, { id: 'quality', label: '质量负责人' }, { id: 'sales', label: '销售经办' }, { id: 'lead', label: '业务负责人' }]
@@ -15,12 +16,15 @@ const now = () => new Date().toISOString()
 const day = () => now().slice(0, 10)
 const publicRequest = r => r && Object.fromEntries(['id','conversationId','matterId','role','status','question','startedAt','finishedAt','runId','error'].map(k => [k, r[k]]))
 const publicRun = run => run && { ...run, toolCalls: [] }
-function stateOf(ws, id) { const state = ws.matters[id]; if (!state) fault(404, 'MATTER_NOT_FOUND', '事项不存在。'); return state }
+function stateOf(ws, id) {
+  if (isRetiredDemoMatter(id)) fault(410, 'MATTER_RETIRED', '此重复演示事项已移出目录。请打开代表事项；历史数据已保留。')
+  const state = ws.matters[id]; if (!state) fault(404, 'MATTER_NOT_FOUND', '事项不存在。'); return state
+}
 function snapshot(ws, id, role, workspaceId, aggregate = true) {
   const state = stateOf(ws, id)
   const graph = projectOffice(state, workspaceId)
   const result = { state: { ...state, documents: getDocuments(state) }, analysis: analyze(state), presentation: presentMatter(state,role), graph, orderChains: buildOrderChains(graph), role, roles, workspaceId }
-  if (aggregate) result.matters = Object.keys(ws.matters).map(key => snapshot(ws, key, role, workspaceId, false))
+  if (aggregate) result.matters = visibleMatterIds(ws).map(key => snapshot(ws, key, role, workspaceId, false))
   return result
 }
 function conversationOf(ws, id, matterId, role) {
@@ -82,6 +86,7 @@ export function createOfficeService({ store, provider = {}, defaultMode = 'live'
     if (!['rules', 'live'].includes(mode)) fault(422, 'INVALID_MODE', '模型运行模式不正确。')
     const fingerprint = digest(JSON.stringify({ question: body.question.trim(), matterId, role, conversationId: body.conversationId, feedback: body.feedback, parentVersionId: body.parentVersionId, mode, ...(body.queryType ? {queryType:body.queryType} : {}) }))
     const registered = await transact(token, ws => {
+      stateOf(ws, matterId)
       const prior = ws.requests[requestId]
       if (prior) {
         if(prior.status==='cancelled'&&!prior.fingerprint&&prior.matterId===matterId&&prior.role===role&&prior.conversationId===body.conversationId)return {prior:publicRequest(prior)}
@@ -152,7 +157,7 @@ export function createOfficeService({ store, provider = {}, defaultMode = 'live'
       const value = await transact(token, (ws, workspaceId) => {
         const state = stateOf(ws, matterId)
         if (method === 'GET' && path === '/snapshot' || method === 'POST' && path === '/session') return snapshot(ws, matterId, role, workspaceId)
-        if (method === 'GET' && path === '/matters') return { matters: Object.keys(ws.matters).map(id => snapshot(ws, id, role, workspaceId, false)) }
+        if (method === 'GET' && path === '/matters') return { matters: visibleMatterIds(ws).map(id => snapshot(ws, id, role, workspaceId, false)) }
         if (method === 'GET' && path === '/graph') return projectOffice(state, workspaceId)
         if (method === 'GET' && path === '/objects') return queryOfficeObjects(state, query)
         if (method === 'GET' && path === '/order-chain') return queryOrderChain(state, query)

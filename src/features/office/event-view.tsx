@@ -258,7 +258,7 @@ export function EventDetail(props: Props & { ask: (q: string) => void }) {
           className='mt-4'
           onClick={() => props.ask('这件事目前处理到哪里，还需要谁办理？')}
         >
-          返回业务助手继续办理
+          向业务助手询问影响与依据
         </Button>
       </Section>
       <ExecutionCards {...props} />

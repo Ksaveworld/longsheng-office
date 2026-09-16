@@ -1,7 +1,8 @@
 import { createState, applyAction } from './office-domain.mjs'
 import { createEventStates } from './office-events.mjs'
-export function createSeedMatters(){
- return Array.from({length:6},(_,i)=>{
+// Archived stage fixtures are retained only for migration/regression tests.
+export function createSeedMatters({includeArchived=false}={}){
+ return Array.from({length:includeArchived?6:1},(_,i)=>{
   const n=i+1,suffix=String(n).padStart(3,'0'),materialId=`M-${String(n).padStart(2,'0')}`
   let state=createState({matterId:`SUP-${suffix}`,materialId,title:`供应商交期变更 · ${materialId}`,arrivalDay:6+i,alternativeDay:4+i,orders:[{id:`ORD-${suffix}-01`,requiredDay:5+i,materialId},{id:`ORD-${suffix}-02`,requiredDay:8+i,materialId}]})
   const act=(type,role='lead',rest={})=>{state=applyAction(state,{type,...rest},role)}
@@ -30,5 +31,5 @@ export function createSeedMatters(){
   const at = new Date().toISOString()
   Object.assign(state.matter,{eventType:"供应商交期变更",urgency:i%2?"高":"紧急",businessObject:materialId,createdAt:at,updatedAt:at,dueAt:new Date(Date.now()+(i-1)*86400000).toISOString(),ownerRole:"lead"})
   return state
- }).concat(createEventStates())
+ }).concat(createEventStates({includeArchived}))
 }

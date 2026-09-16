@@ -201,7 +201,7 @@ test('quality graph supplier follows the task own plan version for A, B and inva
 })
 
 test('all six matter source texts preserve complete order IDs and scope template fields once', () => {
-  for (const state of createSeedMatters().filter(s=>!s.scenario)) {
+  for (const state of createSeedMatters({includeArchived:true}).filter(s=>!s.scenario)) {
     const before = structuredClone(state)
     const documents = getDocuments(state)
     const knownOrders = new Set(state.orders.map(order => order.id))
@@ -430,7 +430,7 @@ test('receipt source and order references must belong to the current matter and 
   const state = executionState()
   const sales = receiptAction(state, 'T-SALES')
   for (const sourceIds of [['DOC-LEDGER-SUP-002'], ['QA-B-001-SUP-002']]) assert.throws(() => applyAction(state, { ...sales, sourceIds }, 'sales'), { code: 'SOURCE_INVALID' })
-  const foreignOrder = createSeedMatters()[1].orders[0].id
+  const foreignOrder = createSeedMatters({includeArchived:true})[1].orders[0].id
   for (const orderIds of [[foreignOrder], ['ORD-UNKNOWN'], [123]]) assert.throws(() => applyAction(state, { ...sales, record: { ...sales.record, orderIds } }, 'sales'), { code: 'ORDER_INVALID' })
   const unrelatedOrderState = structuredClone(state)
   unrelatedOrderState.orders.push({ id: 'ORD-OTHER-MATERIAL', materialId: 'M-OTHER', requiredDay: 5 })
@@ -482,7 +482,7 @@ test('closing captures a detached approved outcome with A residual risk or B zer
 })
 
 test('existing closed records never acquire a fabricated outcome during migration or presentation', () => {
-  const closed = createSeedMatters()[5]
+  const closed = createSeedMatters({includeArchived:true})[5]
   delete closed.matter.outcome
   const savedHistory = structuredClone(closed)
   for (const role of ['lead', 'procurement', 'quality', 'sales']) {
@@ -513,7 +513,7 @@ const finishedRun = input => ({ id: randomUUID(), question: input.question, quer
 test('chat forwards briefing with server-selected matter/role and includes queryType in request idempotency', async t => {
   const inputs = []
   const { call } = serviceFixture(t, async input => { inputs.push(input); return finishedRun(input) })
-  const role = 'quality', matterId = 'SUP-002'
+  const role = 'quality', matterId = 'SUP-001'
   const initial = (await call('/snapshot', undefined, role, matterId)).body.state
   const conversation = (await call('/conversations', {}, role, matterId)).body.conversation
   const body = { question: '这次延期影响什么，我现在需要处理什么？', queryType: 'briefing', requestId: randomUUID(), conversationId: conversation.id, role: 'lead' }
@@ -567,7 +567,7 @@ async function providerServer(t, handler) {
 }
 
 test('plans generated from each matter actual retrieved ledger use valid exact order IDs', async t => {
-  for (const state of createSeedMatters().filter(s=>!s.scenario)) {
+  for (const state of createSeedMatters({includeArchived:true}).filter(s=>!s.scenario)) {
     const before = structuredClone(state)
     const { requests, provider } = await providerServer(t, (body, number) => {
       if (number === 1) return { role: 'assistant', content: null, tool_calls: [{ id: 'read-ledger', type: 'function', function: { name: 'search_documents', arguments: '{}' } }] }
@@ -591,7 +591,7 @@ test('plans generated from each matter actual retrieved ledger use valid exact o
 })
 
 test('live HTTP briefing keeps role-specific presentation, original facts and sources fixed without business writes', async t => {
-  const state = createSeedMatters()[4]
+  const state = createSeedMatters({includeArchived:true})[4]
   const before = structuredClone(state)
   const docId = ledgerId(state)
   const { requests, provider } = await providerServer(t, (_body, number) => number % 2 ? {

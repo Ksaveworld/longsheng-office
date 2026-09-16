@@ -312,8 +312,8 @@ export function Knowledge(props: Props & { refresh: () => Promise<void> }) {
             </p>
           </div>
           <Button asChild variant='outline'>
-            <a href={`#assistant?id=${encodeURIComponent(state.matter.id)}`}>
-              返回助手继续办理 <ArrowRight className='size-4' />
+            <a href={`#matter-detail?id=${encodeURIComponent(state.matter.id)}`}>
+              查看事项办理进度 <ArrowRight className='size-4' />
             </a>
           </Button>
         </div>

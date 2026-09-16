@@ -19,7 +19,7 @@ const titles: Record<string, [string, string]> = {
   accept_task: ['确认接收任务', '确认接收'],
   select_plan: ['确认处理方案意向', '确认选择'],
   approve_keep_a: ['确认沿用供应商 A', '确认批准'],
-  request_quality: ['发起方案质量核验', '确认发起'],
+  request_quality: ['核对核验申请', '提交给质量负责人'],
   approve_switch: ['批准切换', '确认批准'],
   submit_quality: ['确认方案核验结果', '确认提交'],
   submit_receipt: ['确认部门处理回执', '确认提交'],
@@ -103,10 +103,12 @@ export function ActionSheet({
                 </dd>
                 <dt className='text-muted-foreground'>完成要求</dt>
                 <dd>提交通过或不通过结论，并附核验依据。</dd>
+                <dt className='text-muted-foreground'>方案版本</dt>
+                <dd className='break-words'>{snapshot?.state.matter.planSelection?.planVersionId}</dd>
               </dl>
               <div className='rounded-md bg-muted/40 p-4 leading-7'>
-                确认后将核验任务交给质量负责人，当前供应决定仍为{' '}
-                {snapshot?.analysis.effectiveDecisionId}。
+                提交后由质量负责人接收；你当前这一步完成。当前仍采用{' '}
+                {snapshot?.state.matter.supplierId}，核验通过后仍需业务负责人批准。
               </div>
             </>
           )}

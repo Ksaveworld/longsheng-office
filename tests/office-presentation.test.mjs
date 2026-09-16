@@ -28,7 +28,7 @@ function assertActionsAllowed(state, role, view) {
 }
 
 test('six seeded matters expose one revision-consistent view and only guarded role actions', () => {
-  const states = createSeedMatters().filter(s=>!s.scenario)
+  const states = createSeedMatters({includeArchived:true}).filter(s=>!s.scenario)
   const original = structuredClone(states)
   assert.deepEqual(states.map(state => presentMatter(state, 'lead').stage), ['待选择', '核验中', '待批准', '待发送', '部门执行', '已办结'])
   assert.deepEqual(states.map(state => presentMatter(state, 'lead').category), ['warning', 'processing', 'processing', 'processing', 'processing', 'closed'])
@@ -72,7 +72,7 @@ test('selection is distinct from approval and only successful analysis changes t
 })
 
 test('department waiting roles shrink with receipts; closed matters have no blockers or actions', () => {
-  let state = createSeedMatters()[4]
+  let state = createSeedMatters({includeArchived:true})[4]
   assert.deepEqual(presentMatter(state, 'lead').waitingRoles, ['procurement', 'sales'])
   assert.deepEqual(presentMatter(state, 'lead').actions, [])
   assert.deepEqual(presentMatter(state, 'procurement').actions.map(action => action.type), ['submit_receipt'])
@@ -152,7 +152,7 @@ test('both supplier paths require review before approval and lock plan choices a
 })
 
 test('one failed department delivery remains visible without blocking the other role action', () => {
-  let state = act(createSeedMatters()[3], 'arm_delivery_failure')
+  let state = act(createSeedMatters({includeArchived:true})[3], 'arm_delivery_failure')
   state = act(state, 'send_tasks')
   const before = structuredClone(state)
   const lead = presentMatter(state, 'lead')

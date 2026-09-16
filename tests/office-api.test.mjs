@@ -16,7 +16,7 @@ test('HTTP full chain: both plan review, preview/idempotency, isolation, restart
  const confirm=async(p,role='lead',key=randomUUID())=>a('/confirm',{previewId:p.id,expectedVersion:p.revision,idempotencyKey:key},role)
  async function act(action,role='lead'){const p=await prepare(action,role);assert.equal(p.allowed,true,p.reason);const r=await confirm(p,role);assert.equal(r.status,200,JSON.stringify(r.body));return r.body}
  try{
-  const initial=(await a('/snapshot')).body;assert.equal(initial.matters.length,10);assert.equal(initial.analysis.riskCount,1)
+  const initial=(await a('/snapshot')).body;assert.equal(initial.matters.length,4);assert.equal(initial.analysis.riskCount,1)
   const independent=(await b('/snapshot')).body;assert.notEqual(initial.workspaceId,independent.workspaceId)
   const version=initial.state.planVersions.find(p=>p.supplierId==='A')
   const p=await prepare({type:'select_plan',supplierId:'A',planVersionId:version.id});assert.equal((await a('/snapshot')).body.state.matter.planSelection,undefined)
@@ -45,7 +45,7 @@ test('HTTP full chain: both plan review, preview/idempotency, isolation, restart
   assert.equal((await b('/conversations/'+conv.id)).status,404)
   assert.equal((await a('/model',{apiKey:'should-never-be-stored'})).status,403)
   assert.equal((await a('/compare',{question:'internal'})).status,403)
-  assert.equal((await a('/snapshot?matterId=SUP-002')).body.state.matter.id,'SUP-002')
+  assert.equal((await a('/snapshot?matterId=SUP-007')).body.state.matter.id,'SUP-007')
   const cross=await fetch(base+'/snapshot',{headers:{Origin:'https://evil.example'}});assert.equal(cross.status,403)
  }finally{if(server)await stop();rmSync(dir,{recursive:true,force:true})}
 })

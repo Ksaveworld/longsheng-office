@@ -28,8 +28,8 @@ const definitions = [
     ] },
 ]
 
-export function createEventStates({staged=true}={}) {
-  return [...definitions,{...definitions[0],id:'SUP-010',title:'染料批次复检协同已办结样例'}].map((d,index) => {
+export function createEventStates({staged=true,includeArchived=false}={}) {
+  return (includeArchived ? [...definitions,{...definitions[0],id:'SUP-010',title:'染料批次复检协同已办结样例'}] : definitions).map((d,index) => {
     const createdAt = new Date().toISOString(), dueAt = new Date(Date.now()+d.dueDays*86400000).toISOString()
     const state = { revision:1, workflowVersion:3, scenario:structuredClone(d), matter:{id:d.id,title:d.title,status:'open',supplierId:'',materialId:'',eventType:d.eventType,businessObject:d.businessObject,urgency:d.urgency,createdAt,updatedAt:createdAt,dueAt,ownerRole:'lead',participants:[...new Set(['lead',d.reviewer,...d.plans.flatMap(p=>p.tasks.map(t=>t[1]))])]}, suppliers:[],orders:[],decisions:[],documents:[],tasks:[],events:[],planReviews:[],failNextDelivery:false }
     state.planVersions=d.plans.map((p,i)=>({id:`${d.id}-${i?'B':'A'}-v1`,supplierId:i?'B':'A',title:p.title,summary:p.summary,advantages:p.advantages,risks:p.risks,constraints:[`${eventRoles[d.reviewer]}核验当前方案版本`,'负责人批准后单独确认发送任务'],sourceIds:[sourceId(state,'DOC-NOTICE'),sourceId(state,'DOC-RULES')],tasks:p.tasks.map(([id,assignee,title])=>({id,assignee,title})),createdAt,revision:1,origin:'baseline'}))

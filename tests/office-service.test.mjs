@@ -27,9 +27,9 @@ test('long model result appends to fresh data; duplicate request executes once; 
   const latest=await f.call('/snapshot');assert.equal(latest.state.matter.planSelection.supplierId,'A');assert.ok(latest.state.revision>result.run.revision);assert.equal(result.run.facts.state.matter.planSelection,undefined)
   const conversation=await f.call('/conversations/'+conv.id);assert.equal(conversation.runs.length,1)
   await assert.rejects(()=>f.call('/conversations/'+conv.id,undefined,'sales'),{code:'CONVERSATION_NOT_FOUND'})
-  await assert.rejects(()=>f.call('/conversations/'+conv.id,undefined,'lead','SUP-002'),{code:'CONVERSATION_NOT_FOUND'})
+  await assert.rejects(()=>f.call('/conversations/'+conv.id,undefined,'lead','SUP-007'),{code:'CONVERSATION_NOT_FOUND'})
   const second=await f.call('/chat',{question:'另一个呢？',conversationId:conv.id,requestId:randomUUID()});assert.equal(inputSeen.conversationMessages.length,2);assert.equal(second.run.status,'completed')
-  assert.equal((await f.call('/snapshot',undefined,'lead','SUP-002')).state.matter.id,'SUP-002')
+  assert.equal((await f.call('/snapshot',undefined,'lead','SUP-007')).state.matter.id,'SUP-007')
  }finally{finish.resolve();f.close()}
 })
 test('cancel prevents late success and duplicate model execution; public debug actions are denied',async()=>{

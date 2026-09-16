@@ -34,6 +34,7 @@ import { ActionSheet } from './action-sheet'
 import { officeApi, errorText, getOfficeSnapshot, OfficeError } from './api'
 import { Assistant } from './assistant'
 import { Matter } from './business'
+import { MatterWork } from './matter-work'
 import './office.css'
 import { Home, MatterList } from './overview'
 import { Knowledge } from './knowledge'
@@ -98,6 +99,7 @@ export function OfficeApp() {
   const roleRef = useRef(role)
   const matterRef = useRef(matterId)
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
+  const [retiredMatter, setRetiredMatter] = useState(false)
   const [config, setConfig] = useState<ModelConfig | null>(null)
   const [sources, setSources] = useState<Source[]>([])
   const [history, setHistory] = useState<History>({ runs: [], comparisons: [] })
@@ -219,6 +221,11 @@ export function OfficeApp() {
     try {
       next = await getOfficeSnapshot(role)
     } catch (failure) {
+      if (roleRef.current !== role || matterRef.current !== matterId) throw failure
+      if (failure instanceof OfficeError && failure.code === 'MATTER_RETIRED') {
+        setRetiredMatter(true)
+        setSnapshot(null)
+      }
       if (
         failure instanceof OfficeError &&
         failure.code === 'ACCESS_REQUIRED'
@@ -240,6 +247,7 @@ export function OfficeApp() {
     )
       return
     setSnapshot(next)
+    setRetiredMatter(false)
     setSources(documents.documents)
     setConfig(model)
     setHistory(runs)
@@ -298,6 +306,17 @@ export function OfficeApp() {
   function ask(value: string, id = matterId) {
     if (value) sessionStorage.setItem('office-prefill-' + id, value)
     navigate('assistant', id)
+  }
+  function switchRole(value: Role) {
+    roleRef.current = value
+    setLoading(true)
+    setError('')
+    setPreview(null)
+    setReceiptTask(null)
+    setPreviewReceiptContext('')
+    setNotice('')
+    sessionStorage.setItem('office-role', value)
+    setRole(value)
   }
   function openSource(value: Source) {
     const current = sources.find((doc) => doc.id === value.id)
@@ -407,7 +426,9 @@ export function OfficeApp() {
       setPreview(null)
       setReceiptTask(null)
       setPreviewReceiptContext('')
-      setNotice(`已保存。${next.analysis.nextStep}`)
+      setNotice(preview.action.type === 'request_quality'
+        ? '核验申请已提交。等待质量负责人接收，你当前无需操作。'
+        : `已保存。${next.analysis.nextStep}`)
       await refresh()
     } catch (failure) {
       setConfirmError(errorText(failure))
@@ -501,7 +522,7 @@ export function OfficeApp() {
     role,
     busy: actionBusy || loading,
     sources,
-    propose: (action: Action) => void propose(action),
+    propose: (action: Action) => void propose(action, snapshot?.state.revision),
     openSource,
     giveReceipt,
     ask,
@@ -595,17 +616,7 @@ export function OfficeApp() {
           </Label>
           <Select
             value={role}
-            onValueChange={(value) => {
-              roleRef.current = value as Role
-              setLoading(true)
-              setError('')
-              setPreview(null)
-              setReceiptTask(null)
-              setPreviewReceiptContext('')
-              setNotice('')
-              sessionStorage.setItem('office-role', value)
-              setRole(value as Role)
-            }}
+            onValueChange={(value) => switchRole(value as Role)}
             disabled={actionBusy || loading}
           >
             <SelectTrigger aria-label='当前岗位' className='w-36'>
@@ -646,6 +657,7 @@ export function OfficeApp() {
           </Button>
         </div>
         <ErrorNotice message={error} />
+        {retiredMatter && <div className='space-y-3 rounded-xl border bg-card p-5'><p>演示已调整为每种业务类型一个代表事项。此旧入口不再参与办理，原记录保留。</p><Button onClick={() => { setError(''); setRetiredMatter(false); navigate('matter-detail', matterId === 'SUP-010' ? 'SUP-007' : 'SUP-001') }}>打开代表事项</Button></div>}
         {notice && (
           <div
             role='status'
@@ -684,7 +696,8 @@ export function OfficeApp() {
                 <Button variant='ghost' onClick={() => navigate('matter')}>
                   返回事项列表
                 </Button>
-                <Matter snapshot={snapshot} {...businessProps} />
+                <MatterWork key={`${matterId}:${role}`} snapshot={snapshot} {...businessProps} switchRole={switchRole} />
+                <details className='rounded-xl border p-5'><summary className='cursor-pointer font-medium'>查看完整事项、讨论与依据</summary><div className='mt-4'><Matter snapshot={snapshot} {...businessProps} /></div></details>
               </div>
             )}
             {page === 'assistant' && (
@@ -699,9 +712,10 @@ export function OfficeApp() {
                 refresh={refresh}
                 openSource={openSource}
                 sources={sources}
-                propose={(action, expectedVersion) =>
+                propose={(action, expectedVersion) => {
+                  navigate('matter-detail')
                   void propose(action, expectedVersion)
-                }
+                }}
                 giveReceipt={giveReceipt}
                 viewMatter={() => navigate('matter-detail')}
                 actionBusy={actionBusy || loading}

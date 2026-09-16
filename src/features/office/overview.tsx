@@ -6,9 +6,6 @@ import { Input } from '@/components/ui/input'
 import type { BusinessProps } from './business'
 import { Section } from './shared'
 import { type Snapshot, roleNames } from './types'
-import { SupplyEntry } from './knowledge'
-
-const briefQuestion = '这次延期影响什么，我现在需要作什么决定？'
 const ordered = (all: Snapshot[]) =>
   [...all].sort(
     (a, b) =>
@@ -27,7 +24,7 @@ export function Home(
   const [filter, setFilter] = useState('all')
   const shown = all.filter((s) =>
     filter === 'all'
-      ? s.presentation.category !== 'closed'
+      ? true
       : s.presentation.category === filter
   )
   const own = shown.filter(
@@ -138,22 +135,13 @@ export function Home(
           <Button
             size='sm'
             variant={compact ? 'outline' : 'default'}
-            onClick={() =>
-              closed
-                ? props.viewMatter(s.state.matter.id)
-                : props.ask(
-                    s.state.scenario
-                      ? '这件事的影响、可选方案及下一步是什么？'
-                      : briefQuestion,
-                    s.state.matter.id
-                  )
-            }
+            onClick={() => props.viewMatter(s.state.matter.id)}
           >
             {closed
               ? '查看结果档案'
               : compact
                 ? '查看进度'
-                : p.actions[0]?.label || '查看进度'}
+                : '进入事项办理'}
             <ArrowRight className='size-4' />
           </Button>
         </div>
@@ -170,11 +158,10 @@ export function Home(
           合成业务样例 · 岗位为演示身份
         </span>
       </div>
-      <SupplyEntry
-        snapshot={all.find((item) => item.state.matter.id === 'SUP-001') || props.snapshot}
-        ask={props.ask}
-        viewMatter={props.viewMatter}
-      />
+      <div className='rounded-xl border bg-card px-4 py-3'>
+        <p className='font-medium'>{new Set(all.map(s => s.state.matter.eventType)).size} 种业务类型 · {all.length} 个代表事项</p>
+        <p className='mt-1 text-sm text-muted-foreground'>每种类型展示一个案例。供应延期的完整流程集中在 M-01，从查询影响到部门回执与关闭。</p>
+      </div>
       <div className='grid grid-cols-3 gap-3'>
         {[
           ['warning', '预警'],

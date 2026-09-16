@@ -41,7 +41,7 @@ test('old visitors receive added events without replacing existing tasks, conver
   server=createOfficeServer({dbPath:path,defaultMode:'rules'});await new Promise(r=>server.listen(0,'127.0.0.1',r))
   t.after(async()=>{await new Promise(r=>server.close(r));rmSync(dir,{recursive:true,force:true})})
   const snapshot=await (await fetch(`http://127.0.0.1:${server.address().port}/api/office/snapshot`,{headers:{Cookie:cookie}})).json()
-  assert.equal(snapshot.matters.length,10)
+  assert.equal(snapshot.matters.length,4)
   const restored=new DatabaseSync(path),current=JSON.parse(restored.prepare('SELECT state FROM spaces WHERE id=?').get(row.id).state);restored.close()
   for(const [id,state]of Object.entries(old.matters))assert.deepEqual(current.matters[id],state)
   for(const field of ['conversations','runs','requests','idempotency','previews'])assert.deepEqual(current[field],old[field])
@@ -88,7 +88,7 @@ for(const id of ['SUP-007','SUP-008','SUP-009']) for(const choice of ['A','B']) 
 })
 
 test('four event types have distinct objects, real seeded transitions, scoped sources and no invented suppliers',async()=>{
-  const states=createSeedMatters();assert.equal(states.length,10);assert.equal(new Set(states.map(s=>s.matter.eventType)).size,4)
+  const states=createSeedMatters();assert.equal(states.length,4);assert.equal(new Set(states.map(s=>s.matter.eventType)).size,4)
   for(const s of states.filter(s=>s.scenario)){
     assert.ok(s.matter.dueAt&&s.matter.urgency&&s.matter.businessObject)
     const graph=projectOffice(s),ids=new Set(graph.objects.map(o=>o.id))
@@ -101,7 +101,7 @@ test('four event types have distinct objects, real seeded transitions, scoped so
     assert.equal(run.status,'completed');assert.equal(run.intent,'event');assert.ok(run.answer.includes(s.scenario.trigger));assert.deepEqual(s,before)
   }
   const events=states.filter(s=>s.scenario)
-  assert.deepEqual(new Set(events.map(s=>presentMatter(s,'lead').category)),new Set(['warning','processing','closed']))
+  assert.deepEqual(new Set(events.map(s=>presentMatter(s,'lead').category)),new Set(['warning','processing']))
 })
 
 test('event HTTP confirmation remains versioned, idempotent, isolated and restart persistent',async t=>{
