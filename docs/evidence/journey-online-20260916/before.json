@@ -1,0 +1,11 @@
+{
+  "at": "2026-09-16T07:22:08.840Z",
+  "base": "https://longsheng-office-0910.vercel.app",
+  "initialMatterCount": 10,
+  "revision": 3,
+  "supplier": "A",
+  "taskIds": [
+    "T-QA"
+  ],
+  "note": "Independent synthetic visitor prepared before deployment, not user data. Cookies are not included."
+}

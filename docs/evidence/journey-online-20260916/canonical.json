@@ -1,0 +1,15 @@
+{
+  "at": "2026-09-16T07:24:02.793Z",
+  "base": "https://longsheng-office-0910.vercel.app",
+  "candidate": "https://longsheng-office-0910-pu21owakm-kwillsaveworld.vercel.app",
+  "sourceCommit": "bcb55fc90075568bbf9b58666c81c0f96f668da5",
+  "checks": [
+    "正式域名与已验收部署使用同一前端入口资源",
+    "上线前旧访客M-01核验进度逐字段保留，可见事项目录从10条收敛为4条",
+    "正式入口免登录，首页/详情/助手/依据状态一致且刷新后进度保留",
+    "正式域名390像素交接页无横向溢出",
+    "新访客独立初始状态，旧访客办理数据未传播",
+    "公开重置仍拒绝，退役重复事项仍无法办理"
+  ],
+  "errors": []
+}
