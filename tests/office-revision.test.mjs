@@ -1,0 +1,67 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import { createState, applyAction, previewAction, analyze, getDocuments } from '../server/office-domain.mjs'
+import { runOfficeChat } from '../server/office-model.mjs'
+const act = (state, type, role = 'lead', rest = {}) => applyAction(state, { type, ...rest }, role)
+
+test('September 10: optional selection evidence derives from current facts without approval', () => {
+  const initial = act(createState(), 'set_arrival', 'lead', { supplierId: 'A', day: 9 })
+  for (const supplierId of ['A', 'B']) {
+    const selected = act(initial, 'select_plan', 'procurement', { supplierId })
+    assert.equal(selected.tasks.length, 0)
+    assert.equal(analyze(selected).executionApproved, false)
+    assert.match(selected.matter.planSelection.reason, supplierId === 'A' ? /D9.*2 条/ : /D4.*0 条/)
+  }
+  assert.equal(initial.matter.planSelection, undefined)
+})
+
+test('September 10: approval, dispatch, delivery failure, acceptance and work remain distinct', () => {
+  let state = act(createState(), 'select_plan', 'lead', { supplierId: 'A' })
+  assert.equal(previewAction(state, { type: 'send_tasks' }, 'lead').allowed, false)
+  state=act(state,'request_quality');state=act(state,'accept_task','quality',{taskId:'T-QA'});state=act(state,'start_task','quality',{taskId:'T-QA'});state=act(state,'submit_quality','quality',{taskId:'T-QA',result:'approved',evidence:'方案审核通过'})
+  state = act(state, 'approve_keep_a')
+  const approved = structuredClone(state)
+  const preview = previewAction(state, { type: 'send_tasks' }, 'lead')
+  assert.equal(preview.allowed, true)
+  assert.deepEqual(state, approved, 'opening or cancelling preview must not send')
+  assert.ok(state.tasks.filter(t=>t.id!=='T-QA').every(t => t.status === 'pending_delivery' && t.attempts === 0))
+  assert.throws(() => act(state, 'send_tasks', 'procurement'), { code: 'FORBIDDEN' })
+  assert.throws(() => act(state, 'start_task', 'procurement', { taskId: 'T-PUR' }), { code: 'TASK_STATE_CONFLICT' })
+  assert.throws(() => act(state, 'submit_receipt', 'procurement', { taskId: 'T-PUR', evidence: 'not sent' }), { code: 'TASK_STATE_CONFLICT' })
+  state = act(state, 'arm_delivery_failure')
+  state = act(state, 'send_tasks')
+  assert.deepEqual(state.tasks.filter(t=>t.id!=='T-QA').map(t => t.status), ['delivery_failed', 'delivered'])
+  assert.throws(() => act(state, 'send_tasks'), { code: 'NO_PENDING_TASKS' })
+  state = act(state, 'accept_task', 'sales', { taskId: 'T-SALES' })
+  assert.equal(state.tasks.find(t=>t.id==='T-SALES').status, 'accepted')
+  assert.ok(state.tasks.find(t=>t.id==='T-SALES').acceptedAt)
+  assert.equal(state.tasks.find(t=>t.id==='T-SALES').startedAt, undefined)
+  assert.throws(() => act(state, 'submit_receipt', 'sales', { taskId: 'T-SALES', evidence: 'not started' }), { code: 'TASK_STATE_CONFLICT' })
+  state = act(state, 'start_task', 'sales', { taskId: 'T-SALES' })
+  state = act(state, 'submit_receipt', 'sales', { taskId: 'T-SALES', evidence: '销售交期已同步' })
+  assert.equal(analyze(state).canClose, false)
+  state = act(state, 'retry_delivery', 'procurement', { taskId: 'T-PUR' })
+  state = act(state, 'accept_task', 'procurement', { taskId: 'T-PUR' })
+  state = act(state, 'start_task', 'procurement', { taskId: 'T-PUR' })
+  state = act(state, 'submit_receipt', 'procurement', { taskId: 'T-PUR', evidence: '采购跟进安排已确认' })
+  assert.equal(state.tasks.length, 3)
+  assert.equal(analyze(state).canClose, true)
+  state = act(state, 'close_matter')
+  assert.equal(state.matter.status, 'closed')
+  assert.equal(analyze(state).riskCount, 1)
+})
+
+test('September 10: feedback and historical answer facts are read-only and versioned', async () => {
+  const state = createState(), before = structuredClone(state)
+  const run = await runOfficeChat({ state, question: '方案调整反馈：要求 D2 到货。请重新比较现有 A/B 方案。', role: 'lead', mode: 'rules' })
+  assert.equal(run.status, 'completed')
+  assert.match(run.answer, /规则演示.*不能验证/)
+  assert.deepEqual(state, before)
+  const changed = act(state, 'set_arrival', 'lead', { supplierId: 'A', day: 9 })
+  assert.equal(analyze(changed).riskCount, 2)
+  assert.equal(run.facts.analysis.riskCount, 1)
+  assert.equal(run.facts.state.suppliers[0].arrivalDay, 6)
+  assert.equal(run.facts.state.revision, run.revision)
+  assert.ok(run.sources.every(s => s.text))
+  assert.deepEqual(getDocuments(state).filter(s => s.id.startsWith('DOC-MEETING')), getDocuments(changed).filter(s => s.id.startsWith('DOC-MEETING')))
+})

@@ -1,31 +1,37 @@
-import { analyze, getDocuments } from './office-domain.mjs'
+import { analyze, getDocuments, isCurrentQualityTask } from './office-domain.mjs'
 
 // The platform projection contract is reused here: typed identities, registered
 // properties and schema-checked edges. Office state remains the only writable data.
-const ROLES = { procurement: '采购经办', quality: '质量负责人', sales: '销售经办', lead: '业务负责人' }
+const ROLES = { procurement: '采购经办', quality: '质量负责人', sales: '销售经办', lead: '业务负责人', production:'生产计划', maintenance:'设备维护' }
 const STATUS = {
   open: '处理中', closed: '已关闭', approved: '通过', pending: '待核验', rejected: '不通过',
   effective: '当前有效', conditional: '附条件候选方案｜未生效', fulfilled: '条件已落实', superseded: '已被替代',
   pending_delivery: '待送达', delivered: '已送达', delivery_failed: '送达失败',
-  in_progress: '处理中', awaiting_review: '待复核', completed: '已完成', historical: '历史回执',
+  accepted: '已接收', in_progress: '处理中', awaiting_review: '待复核', completed: '已完成', historical: '历史回执',
 }
 const TYPE_DEFINITIONS = [
-  ['Matter', '办公事项', { id: '事项编号', title: '事项名称', status: '状态代码', statusLabel: '当前状态', supplierId: '当前供应商', materialId: '物料编号', linkedCount: '关联订单数', riskCount: '风险订单数', nextStep: '下一步', closedAt: '关闭时间' }],
+  ['Matter', '办公事项', { id: '事项编号', title: '事项名称', status: '状态代码', statusLabel: '当前状态', supplierId: '当前供应商', materialId: '物料编号', linkedCount: '关联订单数', riskCount: '风险订单数', nextStep: '下一步', closedAt: '关闭时间', planSelection: '方案选择记录', followupApproval: '保留 A 跟进确认', review: '最终复核记录', executionApproval:'当前方案版本批准', outcome:'关闭时处理结果快照',eventType:'事件类型',businessObject:'主要业务对象',urgency:'紧急度',createdAt:'创建时间',updatedAt:'更新时间',dueAt:'处理期限',ownerRole:'责任岗位',participants:'协同岗位' }],
+  ['BusinessObject', '业务对象', {id:'对象编号',name:'对象名称',eventType:'事件类型'}],
   ['Material', '物料', { id: '物料编号', name: '物料名称' }],
-  ['Supplier', '供应商', { id: '供应商编号', name: '名称', arrivalDay: '预计到料日（D）', originalDay: '原到料日（D）', quality: '质量状态代码', qualityLabel: '质量状态', selected: '当前采用', riskCount: '方案风险订单数', eligible: '质量资格已通过' }],
+  ['Supplier', '供应商', { id: '供应商编号', name: '名称', arrivalDay: '预计到料日（D）', originalDay: '原到料日（D）', quality: '质量状态代码', qualityLabel: '质量状态', selected: '当前采用', riskCount: '方案风险订单数', eligible: '所选方案版本审核已通过' }],
   ['Order', '关联订单', { id: '订单编号', materialId: '物料编号', requiredDay: '最晚到料日（D）', arrivalDay: '当前方案到料日（D）', lateDays: '延误天数', atRisk: '存在到料风险' }],
   ['Decision', '会议与批准决定', { id: '决定编号', text: '决定内容', status: '状态代码', statusLabel: '当前效力', supplierId: '对应供应商', sequence: '先后顺序', sourceId: '原始来源编号', basedOn: '批准依据', approvedBy: '确认人角色', createdAt: '确认时间' }],
   ['Role', '演示角色', { id: '角色代码', name: '角色名称', identity: '身份说明' }],
-  ['Task', '协同任务', { id: '任务编号', title: '任务名称', assignee: '责任角色', assigneeLabel: '责任人', status: '状态代码', statusLabel: '当前状态', attempts: '本轮送达次数', deliveryError: '送达失败原因', qualityResult: '核验结论代码', qualityResultLabel: '核验结论', createdAt: '创建时间', deliveredAt: '送达时间', startedAt: '开始时间', completedAt: '完成时间', reopenedAt: '重新发起时间', reviewedBy: '复核人角色', historyCount: '历史核验轮数', workStatus: '工作状态', delivery: '消息送达状态' }],
-  ['Receipt', '处理回执', { id: '回执编号', taskId: '所属任务', evidence: '处理凭据', actor: '提交人角色', actorLabel: '提交人', at: '提交时间', status: '状态代码', statusLabel: '当前状态', qualityResult: '核验结论代码', qualityResultLabel: '核验结论', historical: '历史回执', round: '核验轮次', sourceId: '凭据来源编号' }],
+  ['Task', '协同任务', { id: '任务编号', title: '任务名称', assignee: '责任角色', assigneeLabel: '责任人', status: '状态代码', statusLabel: '当前状态', attempts: '本轮送达次数', deliveryError: '送达失败原因', qualityResult: '核验结论代码', qualityResultLabel: '核验结论', createdAt: '创建时间', sentAt:'发送时间', deliveredAt: '送达时间', acceptedAt: '接收时间', startedAt: '开始时间', completedAt: '完成时间', reopenedAt: '重新发起时间', reviewedBy: '复核人角色', planVersionId:'所属方案版本', selectionInvalidated:'改选后已失效，仅保留历史', selectionRevision:'绑定的方案选择记录版本', historyCount: '历史处理轮数', workStatus: '工作状态', delivery: '消息送达状态' }],
+  ['Receipt', '处理回执', { id: '回执编号', taskId: '所属任务', evidence: '处理凭据', actor: '提交人角色', actorLabel: '提交人', at: '提交时间', status: '状态代码', statusLabel: '当前状态', qualityResult: '核验结论代码', qualityResultLabel: '核验结论', historical: '历史回执', round: '核验轮次', sourceId: '凭据来源编号', sourceIds:'关联来源编号', record:'结构化处理记录' }],
   ['Document', '来源文档', { id: '来源编号', title: '标题', text: '来源原文', source: '来源说明' }],
 ]
 const EDGE_DEFINITIONS = [
+  ['matterBusinessObject','涉及业务对象','Matter','BusinessObject'],
   ['matterMaterial', '关联物料', 'Matter', 'Material'],
   ['matterOrder', '关联订单', 'Matter', 'Order'],
   ['orderMaterial', '需要物料', 'Order', 'Material'],
   ['matterSupplier', '供货方案', 'Matter', 'Supplier'],
   ['matterSelectedSupplier', '当前采用', 'Matter', 'Supplier'],
+  ['matterPlannedSupplier', '已选择待办理方案', 'Matter', 'Supplier'],
+  ['matterPlanSelectedBy', '方案选择人', 'Matter', 'Role'],
+  ['matterFollowupApprovedBy', '保留 A 跟进确认人', 'Matter', 'Role'],
+  ['matterReviewedBy', '最终复核人', 'Matter', 'Role'],
   ['supplierMaterial', '可供应物料', 'Supplier', 'Material'],
   ['matterDecision', '关联决定', 'Matter', 'Decision'],
   ['matterEffectiveDecision', '有效决定', 'Matter', 'Decision'],
@@ -65,7 +71,10 @@ export function projectOffice(state, workspaceId = '') {
   const add = (type, key, label, properties, provenance = []) => {
     const id = `${type}:${key}`
     if (objectMap.has(id)) return id
-    const object = { id, type, label, properties: structuredClone({ ...properties, revision: state.revision }), sourceIds: [...new Set(provenance)].filter(source => sourceIds.has(source)) }
+    const imported = (state.supplyImport?.records || []).filter(record => record.objectId === id && record.value === properties[record.field]).map(record => record.id)
+    if (state.supplyImport?.summary && ['Matter', 'Supplier', 'Order'].includes(type)) imported.push(state.supplyImport.summary.id)
+    provenance = [...provenance, ...imported]
+    const object = { id, type, label, properties: structuredClone({ ...properties, revision: state.revision }), sourceIds: [...new Set(provenance.map(id=>state.matter.id==='SUP-001'||id.endsWith(state.matter.id)?id:`${id}-${state.matter.id}`))].filter(source => sourceIds.has(source)) }
     objects.push(object); objectMap.set(id, object)
     return id
   }
@@ -80,9 +89,15 @@ export function projectOffice(state, workspaceId = '') {
   for (const [id, name] of Object.entries(ROLES)) add('Role', id, name, { id, name, identity: '页面内演示角色，非企业身份认证' }, ['DOC-ROLES'])
   const matterId = add('Matter', state.matter.id, state.matter.title, {
     ...state.matter, statusLabel: STATUS[state.matter.status] ?? state.matter.status,
-    linkedCount: analysis.linkedCount, riskCount: analysis.riskCount, nextStep: analysis.nextStep,
-  }, ['DOC-NOTICE', 'DOC-LEDGER', 'DOC-STATE'])
-  for (const materialId of new Set([state.matter.materialId, ...state.orders.map(order => order.materialId)])) {
+    ...(!state.scenario ? {linkedCount: analysis.linkedCount, riskCount: analysis.riskCount} : {}), nextStep: analysis.nextStep,
+  }, ['DOC-NOTICE', 'DOC-LEDGER', 'DOC-STATE', 'DOC-PLAN-SELECTION', 'DOC-KEEP-A', 'DOC-CLOSE-REVIEW'])
+  if (state.scenario) {
+    const id=add('BusinessObject',state.matter.businessObject,state.matter.businessObject,{id:state.matter.businessObject,name:state.matter.businessObject,eventType:state.matter.eventType},['DOC-NOTICE']);link('matterBusinessObject',matterId,id)
+  }
+  if (state.matter.planSelection) link('matterPlanSelectedBy', matterId, `Role:${state.matter.planSelection.selectedBy}`)
+  if (state.matter.followupApproval) link('matterFollowupApprovedBy', matterId, `Role:${state.matter.followupApproval.approvedBy}`)
+  if (state.matter.review) link('matterReviewedBy', matterId, `Role:${state.matter.review.reviewedBy}`)
+  for (const materialId of new Set([state.matter.materialId, ...state.orders.map(order => order.materialId)].filter(Boolean))) {
     add('Material', materialId, `物料 ${materialId}`, { id: materialId, name: `物料 ${materialId}` }, ['DOC-LEDGER'])
   }
   link('matterMaterial', matterId, `Material:${state.matter.materialId}`)
@@ -94,6 +109,7 @@ export function projectOffice(state, workspaceId = '') {
     }, ['DOC-LEDGER', 'DOC-STATE'])
     link('matterSupplier', matterId, id)
     if (supplier.id === state.matter.supplierId) link('matterSelectedSupplier', matterId, id)
+    if (supplier.id === state.matter.planSelection?.supplierId) link('matterPlannedSupplier', matterId, id)
     link('supplierMaterial', id, `Material:${state.matter.materialId}`)
   }
   for (const order of state.orders) {
@@ -114,13 +130,18 @@ export function projectOffice(state, workspaceId = '') {
   }
   for (const task of state.tasks) {
     const { receipt, history, ...properties } = task
+    const invalidQa = task.id === 'T-QA' && state.matter.status !== 'closed' && !isCurrentQualityTask(state,task)
     const id = add('Task', task.id, `${task.id} · ${task.title}`, { ...properties,
-      assigneeLabel: ROLES[task.assignee] ?? task.assignee, statusLabel: STATUS[task.status] ?? task.status,
+      ...(invalidQa ? {selectionInvalidated:true} : {}),
+      assigneeLabel: ROLES[task.assignee] ?? task.assignee, statusLabel: invalidQa || task.selectionInvalidated ? '历史核验 · 已改选失效' : STATUS[task.status] ?? task.status,
       qualityResultLabel: STATUS[task.qualityResult] ?? task.qualityResult ?? '', historyCount: history?.length ?? 0,
-    }, ['DOC-STATE', 'DOC-ROLES', 'DOC-RULES'])
+    }, ['DOC-STATE', 'DOC-ROLES', 'DOC-RULES', ...(task.id === 'T-QA' ? ['QA-B-001'] : [state.matter.followupApproval ? 'DOC-KEEP-A' : 'DOC-DECISION-03', 'DOC-CLOSE-REVIEW'])])
     link('matterTask', matterId, id)
     link('taskAssignee', id, `Role:${task.assignee}`)
-    if (task.assignee === 'quality') link('taskSupplier', id, 'Supplier:B')
+    if (task.assignee === 'quality') {
+      const supplierId = state.planVersions?.find(version => version.id === task.planVersionId)?.supplierId
+      if (supplierId) link('taskSupplier', id, `Supplier:${supplierId}`)
+    }
     else link('taskSupplier', id, `Supplier:${state.matter.supplierId}`)
     const addReceipt = (entry, result, historical, round) => {
       if (!entry) return
@@ -130,7 +151,7 @@ export function projectOffice(state, workspaceId = '') {
       const receiptId = add('Receipt', key, `${task.id} · ${historical ? `第 ${round} 轮历史回执` : '处理回执'}`, {
         id: key, taskId: task.id, ...value, actorLabel: ROLES[value.actor] ?? value.actor ?? '',
         status, statusLabel: STATUS[status] ?? status, qualityResult: result ?? '', qualityResultLabel: STATUS[result] ?? result ?? '', historical, round,
-      }, ['DOC-STATE', 'DEMO-STATE'])
+      }, ['DOC-STATE', 'DEMO-STATE', ...(historical ? [] : [task.id === 'T-QA' ? 'QA-B-001' : `DOC-RECEIPT-${task.id}`])])
       link(historical ? 'taskHistoricalReceipt' : 'taskReceipt', id, receiptId)
       if (value.actor) link('receiptActor', receiptId, `Role:${value.actor}`)
     }

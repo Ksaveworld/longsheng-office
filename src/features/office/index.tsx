@@ -5,12 +5,12 @@ import {
   ListTodo,
   Loader2,
   MessageSquare,
+  Network,
   RefreshCw,
-  Settings2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
@@ -26,15 +26,17 @@ import {
   SheetFooter,
   SheetTitle,
 } from '@/components/ui/sheet'
-import { ActionSheet } from './action-sheet'
 import { Textarea } from '@/components/ui/textarea'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ThemeSwitch } from '@/components/theme-switch'
+import { ActionSheet } from './action-sheet'
 import { officeApi, errorText, getOfficeSnapshot, OfficeError } from './api'
 import { Assistant } from './assistant'
-import { Home, Matter } from './business'
-import { Settings } from './settings'
+import { Matter } from './business'
+import './office.css'
+import { Home, MatterList } from './overview'
+import { Knowledge } from './knowledge'
 import { ErrorNotice } from './shared'
 import {
   roleNames,
@@ -47,6 +49,8 @@ import {
   type Snapshot,
   type Source,
   type Task,
+  type AssistantSession,
+  type ReceiptRecord,
 } from './types'
 
 const pages = [
@@ -54,7 +58,7 @@ const pages = [
     id: 'home',
     label: '办公协同',
     icon: HomeIcon,
-    description: '从延期通知出发，跟进影响、决定与部门任务。',
+    description: '跟进业务异常、处理决定与部门任务。',
   },
   {
     id: 'assistant',
@@ -66,24 +70,33 @@ const pages = [
     id: 'matter',
     label: '事项详情',
     icon: ListTodo,
-    description: '供应商交期变更 · 来源、方案与处理记录。',
+    description: '业务事项 · 来源、方案与处理记录。',
   },
-  {
-    id: 'settings',
-    label: '演示设置',
-    icon: Settings2,
-    description: '调整样例数据、检查模型连接与失败恢复。',
-  },
+  { id: 'knowledge', label: '业务依据', icon: Network, description: '核对订单影响、会议决定、办理条件与原始资料。' },
 ] as const
 function readPage(): Page {
-  const value = window.location.hash.slice(1)
+  const value = window.location.hash.slice(1).split('?')[0]
+  if (value === 'matter-detail') {
+    const id = new URLSearchParams(window.location.hash.split('?')[1]).get('id')
+    return !id || /^SUP-\d{3}$/.test(id) ? 'matter-detail' : 'matter'
+  }
   return pages.some((page) => page.id === value) ? (value as Page) : 'home'
 }
 
 export function OfficeApp() {
   const [page, setPage] = useState<Page>(readPage)
-  const [role, setRole] = useState<Role>('lead')
+  const [matterId, setMatterId] = useState(
+    () =>
+      new URLSearchParams(location.hash.split('?')[1] || '').get('id') ||
+      sessionStorage.getItem('office-current-matter') ||
+      'SUP-001'
+  )
+  const [role, setRole] = useState<Role>(() => {
+    const saved = sessionStorage.getItem('office-role')
+    return saved && saved in roleNames ? (saved as Role) : 'lead'
+  })
   const roleRef = useRef(role)
+  const matterRef = useRef(matterId)
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
   const [config, setConfig] = useState<ModelConfig | null>(null)
   const [sources, setSources] = useState<Source[]>([])
@@ -93,7 +106,43 @@ export function OfficeApp() {
   const [accessRequired, setAccessRequired] = useState(false)
   const [accessCode, setAccessCode] = useState('')
   const [notice, setNotice] = useState('')
-  const [question, setQuestion] = useState('')
+  const [assistantSessions, setAssistantSessions] = useState<
+    Record<string, AssistantSession>
+  >(() => {
+    try {
+      const stored = JSON.parse(
+        sessionStorage.getItem('office-assistant-sessions') || '{}'
+      ) as Record<string, AssistantSession>
+      return Object.fromEntries(
+        Object.entries(stored)
+          .filter(([, value]) => value && typeof value.question === 'string')
+          .map(([key, value]) => [
+            key,
+            value.busy
+              ? {
+                  ...value,
+                  busy: false,
+                  error: '上次查询被页面刷新中断，请重试原问题。',
+                  failedQuestion: value.failedQuestion || value.question,
+                  snapshotReady: false,
+                }
+              : { ...value, historical: !!value.run, snapshotReady: false },
+          ])
+      )
+    } catch {
+      return {}
+    }
+  })
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(
+        'office-assistant-sessions',
+        JSON.stringify(assistantSessions)
+      )
+    } catch {
+      /* Storage may be unavailable; in-page sessions still work. */
+    }
+  }, [assistantSessions])
   const [source, setSource] = useState<Source | null>(null)
   const [preview, setPreview] = useState<Preview | null>(null)
   const [actionBusy, setActionBusy] = useState(false)
@@ -101,20 +150,79 @@ export function OfficeApp() {
   const [receiptTask, setReceiptTask] = useState<Task | null>(null)
   const [evidence, setEvidence] = useState('')
   const [qualityResult, setQualityResult] = useState('approved')
+  const [receiptRecord, setReceiptRecord] = useState<ReceiptRecord>({})
+  const [receiptSources, setReceiptSources] = useState<string[]>([])
   const confirmKey = useRef('')
   const operationLock = useRef(false)
-  const receiptDraft = useRef<{ task: Task; evidence: string; result: string } | null>(null)
+  const receiptVersion = useRef<number | undefined>(undefined)
+  const [receiptContext, setReceiptContext] = useState('')
+  const [previewReceiptContext, setPreviewReceiptContext] = useState('')
+  const receiptDrafts = useRef(
+    new Map<
+      string,
+      {
+        task: Task
+        evidence: string
+        result: string
+        record: ReceiptRecord
+        sourceIds: string[]
+      }
+    >()
+  )
+  const sessionKey = `${snapshot?.workspaceId}:${snapshot?.state.matter.id}:${role}:${config?.mode}`
+  const priorRun =
+    history.runs.find(
+      (item) =>
+        item.role === role &&
+        item.mode === config?.mode &&
+        item.variant === 'ontology'
+    ) ?? null
+  const assistantSession = assistantSessions[sessionKey] ?? {
+    question: priorRun?.question ?? '',
+    planReason: '',
+    run: priorRun,
+    historical: !!priorRun,
+    busy: false,
+    error: '',
+    failedQuestion: '',
+    snapshotReady: false,
+  }
+  function updateAssistantSession(patch: Partial<AssistantSession>) {
+    setAssistantSessions((previous) => ({
+      ...previous,
+      [sessionKey]: { ...(previous[sessionKey] ?? assistantSession), ...patch },
+    }))
+  }
 
   useEffect(() => {
-    if (receiptTask) receiptDraft.current = { task: receiptTask, evidence, result: qualityResult }
-  }, [receiptTask, evidence, qualityResult])
+    // The key belongs to this render's form fields, so an older effect cannot
+    // save the previous form under the context of a newly opened dialog.
+    if (receiptTask && receiptContext)
+      receiptDrafts.current.set(receiptContext, {
+        task: receiptTask,
+        evidence,
+        result: qualityResult,
+        record: receiptRecord,
+        sourceIds: receiptSources,
+      })
+  }, [
+    receiptTask,
+    receiptContext,
+    evidence,
+    qualityResult,
+    receiptRecord,
+    receiptSources,
+  ])
 
   const refresh = useCallback(async () => {
     let next: Snapshot
     try {
       next = await getOfficeSnapshot(role)
     } catch (failure) {
-      if (failure instanceof OfficeError && failure.code === 'ACCESS_REQUIRED') {
+      if (
+        failure instanceof OfficeError &&
+        failure.code === 'ACCESS_REQUIRED'
+      ) {
         setAccessRequired(true)
         setSnapshot(null)
       }
@@ -125,13 +233,18 @@ export function OfficeApp() {
       officeApi<ModelConfig>('/model', role),
       officeApi<History>('/runs', role),
     ])
-    if (roleRef.current !== role) return
+    if (
+      roleRef.current !== role ||
+      next.state.matter.id !== matterId ||
+      next.state.matter.id !== matterRef.current
+    )
+      return
     setSnapshot(next)
     setSources(documents.documents)
     setConfig(model)
     setHistory(runs)
     setAccessRequired(false)
-  }, [role])
+  }, [role, matterId])
   useEffect(() => {
     let active = true
     // refresh only updates state after awaiting the network response.
@@ -148,17 +261,43 @@ export function OfficeApp() {
     }
   }, [role, refresh])
   useEffect(() => {
-    const changed = () => setPage(readPage())
+    const changed = () => {
+      setPage(readPage())
+      const id =
+        new URLSearchParams(location.hash.split('?')[1] || '').get('id') ||
+        sessionStorage.getItem('office-current-matter') ||
+        'SUP-001'
+      sessionStorage.setItem('office-current-matter', id)
+      if (id !== matterRef.current) {
+        setLoading(true)
+        setNotice('')
+        setError('')
+        setConfirmError('')
+      }
+      matterRef.current = id
+      setMatterId(id)
+      setPreview(null)
+      setReceiptTask(null)
+    }
     window.addEventListener('hashchange', changed)
     return () => window.removeEventListener('hashchange', changed)
   }, [])
-  function navigate(next: Page) {
-    window.location.assign('#' + next)
+  function navigate(next: Page, id = matterId) {
+    if (id !== matterId) {
+      setLoading(true)
+      setNotice('')
+      setError('')
+      setConfirmError('')
+    }
+    sessionStorage.setItem('office-current-matter', id)
+    window.location.hash = next + '?id=' + encodeURIComponent(id)
     setPage(next)
+    matterRef.current = id
+    setMatterId(id)
   }
-  function ask(value: string) {
-    if (value) setQuestion(value)
-    navigate('assistant')
+  function ask(value: string, id = matterId) {
+    if (value) sessionStorage.setItem('office-prefill-' + id, value)
+    navigate('assistant', id)
   }
   function openSource(value: Source) {
     const current = sources.find((doc) => doc.id === value.id)
@@ -189,7 +328,11 @@ export function OfficeApp() {
       setLoading(false)
     }
   }
-  async function propose(action: Action) {
+  async function propose(
+    action: Action,
+    expectedVersion?: number,
+    receiptKey = ''
+  ) {
     if (operationLock.current) return
     operationLock.current = true
     setActionBusy(true)
@@ -199,25 +342,46 @@ export function OfficeApp() {
     try {
       const response = await officeApi<{ preview: Preview }>('/preview', role, {
         action,
+        expectedVersion,
       })
       confirmKey.current = crypto.randomUUID()
-      if (roleRef.current !== role) return
+      if (roleRef.current !== role || matterRef.current !== matterId) return
       if (action.type === 'start_task' && response.preview.allowed) {
         const next = await officeApi<Snapshot>('/confirm', role, {
           previewId: response.preview.id,
           expectedVersion: response.preview.revision,
           idempotencyKey: confirmKey.current,
         })
+        if (roleRef.current !== role || matterRef.current !== matterId) return
         setSnapshot(next)
         setNotice('已开始处理。')
         await refresh()
       } else {
+        setPreviewReceiptContext(receiptKey)
         setPreview(response.preview)
       }
     } catch (failure) {
       setError(errorText(failure))
-      if (['submit_quality', 'submit_receipt'].includes(action.type) && receiptDraft.current) {
-        setReceiptTask(receiptDraft.current.task)
+      if (failure instanceof OfficeError && failure.code === 'STALE_VERSION') {
+        try {
+          await refresh()
+        } catch {
+          /* Preserve the original conflict. */
+        }
+      }
+      const draft = receiptDrafts.current.get(receiptKey)
+      if (
+        ['submit_quality', 'submit_receipt'].includes(action.type) &&
+        draft &&
+        roleRef.current === role &&
+        matterRef.current === matterId
+      ) {
+        setReceiptContext(receiptKey)
+        setReceiptTask(draft.task)
+        setEvidence(draft.evidence)
+        setQualityResult(draft.result)
+        setReceiptRecord(draft.record)
+        setReceiptSources(draft.sourceIds)
       }
     } finally {
       operationLock.current = false
@@ -235,11 +399,15 @@ export function OfficeApp() {
         expectedVersion: preview.revision,
         idempotencyKey: confirmKey.current,
       })
+      if (previewReceiptContext && ['submit_quality', 'submit_receipt'].includes(preview.action.type)) {
+        receiptDrafts.current.delete(previewReceiptContext)
+      }
+      if (roleRef.current !== role || matterRef.current !== matterId) return
       setSnapshot(next)
       setPreview(null)
       setReceiptTask(null)
-      receiptDraft.current = null
-      setNotice('已保存，当前事项和待办已更新。')
+      setPreviewReceiptContext('')
+      setNotice(`已保存。${next.analysis.nextStep}`)
       await refresh()
     } catch (failure) {
       setConfirmError(errorText(failure))
@@ -253,31 +421,82 @@ export function OfficeApp() {
       setActionBusy(false)
     }
   }
-  const giveReceipt = useCallback((task: Task) => {
-    setReceiptTask(task)
-    const draft = receiptDraft.current?.task.id === task.id ? receiptDraft.current : null
-    setEvidence(draft?.evidence || '')
-    setQualityResult(draft?.result || 'approved')
-  }, [])
+  const giveReceipt = useCallback(
+    (task: Task) => {
+      receiptVersion.current = snapshot?.state.revision
+      setReceiptTask(task)
+      const key = [
+        snapshot?.workspaceId,
+        snapshot?.state.matter.id,
+        role,
+        task.id,
+        task.planVersionId || '',
+      ].join(':')
+      setReceiptContext(key)
+      const draft = receiptDrafts.current.get(key)
+      setEvidence(draft?.evidence || '')
+      setQualityResult(draft?.result || 'approved')
+      setReceiptRecord(draft?.record || {})
+      setReceiptSources(draft?.sourceIds || [])
+    },
+    [
+      snapshot?.state.revision,
+      snapshot?.workspaceId,
+      snapshot?.state.matter,
+      role,
+    ]
+  )
+  const receiptEvidence =
+    snapshot?.state.scenario || receiptTask?.id === 'T-QA'
+      ? evidence.trim()
+      : [
+          receiptRecord.arrangement
+            ? '采购跟进安排：' + receiptRecord.arrangement
+            : '',
+          receiptRecord.pending ? '仍待确认：' + receiptRecord.pending : '',
+          receiptRecord.orderIds?.length
+            ? '涉及订单：' + receiptRecord.orderIds.join('、')
+            : '',
+          receiptRecord.communication
+            ? '同步内容：' + receiptRecord.communication
+            : '',
+          receiptRecord.result ? '同步结果：' + receiptRecord.result : '',
+          evidence.trim() ? '补充说明：' + evidence.trim() : '',
+        ]
+          .filter(Boolean)
+          .join('；')
+  const receiptReady =
+    snapshot?.state.scenario || receiptTask?.id === 'T-QA'
+      ? !!evidence.trim()
+      : receiptTask?.id === 'T-PUR'
+        ? !!receiptRecord.arrangement?.trim() && !!receiptRecord.pending?.trim()
+        : !!receiptRecord.orderIds?.length &&
+          !!receiptRecord.communication?.trim() &&
+          !!receiptRecord.result?.trim()
   function receiptPreview() {
-    if (!receiptTask || !evidence.trim()) return
+    if (!receiptTask || !receiptReady) return
     const action: Action =
       receiptTask.id === 'T-QA'
         ? {
             type: 'submit_quality',
             taskId: receiptTask.id,
             result: qualityResult,
-            evidence: evidence.trim(),
+            evidence: receiptEvidence,
+            sourceIds: receiptSources,
           }
         : {
             type: 'submit_receipt',
             taskId: receiptTask.id,
-            evidence: evidence.trim(),
+            record: receiptRecord,
+            evidence: receiptEvidence,
+            sourceIds: receiptSources,
           }
     setReceiptTask(null)
-    void propose(action)
+    void propose(action, receiptVersion.current, receiptContext)
   }
-  const currentPage = pages.find((item) => item.id === page)!
+  const currentPage = pages.find(
+    (item) => item.id === (page === 'matter-detail' ? 'matter' : page)
+  )!
   const businessProps = {
     role,
     busy: actionBusy || loading,
@@ -286,7 +505,11 @@ export function OfficeApp() {
     openSource,
     giveReceipt,
     ask,
-    viewMatter: () => navigate('matter'),
+    viewMatter: (id?: string, eventId?: string) => {
+      navigate('matter-detail', id || matterId)
+      if (eventId)
+        window.location.hash += '&event=' + encodeURIComponent(eventId)
+    },
   }
 
   if (accessRequired) {
@@ -295,33 +518,73 @@ export function OfficeApp() {
         <div className='w-full max-w-sm space-y-8'>
           <div className='space-y-6'>
             <div className='flex items-center gap-3'>
-              <img src={`${import.meta.env.BASE_URL}brand/logo-mark-aihuashen.svg`} alt='爱化身标识' width={36} height={36} className='size-9 dark:invert' />
-              <img src={`${import.meta.env.BASE_URL}brand/logo-wordmark-aihuashen.svg`} alt='AiHuaShen' width={142} height={19} className='w-[142px] dark:invert' />
+              <img
+                src={`${import.meta.env.BASE_URL}brand/logo-mark-aihuashen.svg`}
+                alt='爱化身标识'
+                width={36}
+                height={36}
+                className='size-9 dark:invert'
+              />
+              <img
+                src={`${import.meta.env.BASE_URL}brand/logo-wordmark-aihuashen.svg`}
+                alt='AiHuaShen'
+                width={142}
+                height={19}
+                className='w-[142px] dark:invert'
+              />
             </div>
             <div>
-              <h1 className='text-2xl font-semibold tracking-tight'>龙盛办公协同</h1>
-              <p className='mt-3 text-sm leading-6 text-muted-foreground'>输入访问码，进入办公协同。</p>
+              <h1 className='text-2xl font-semibold tracking-tight'>
+                龙盛办公协同
+              </h1>
+              <p className='mt-3 text-sm leading-6 text-muted-foreground'>
+                输入访问码，进入办公协同。
+              </p>
             </div>
           </div>
-          <form className='space-y-4' onSubmit={(event) => { event.preventDefault(); void enterDemo() }}>
+          <form
+            className='space-y-4'
+            onSubmit={(event) => {
+              event.preventDefault()
+              void enterDemo()
+            }}
+          >
             <div className='space-y-2'>
               <Label htmlFor='office-access-code'>访问码</Label>
-              <Input id='office-access-code' type='password' value={accessCode} onChange={(event) => setAccessCode(event.target.value)} placeholder='请输入访问码' autoComplete='off' autoFocus disabled={loading} required />
+              <Input
+                id='office-access-code'
+                type='password'
+                value={accessCode}
+                onChange={(event) => setAccessCode(event.target.value)}
+                placeholder='请输入访问码'
+                autoComplete='off'
+                autoFocus
+                disabled={loading}
+                required
+              />
             </div>
-            <ErrorNotice message={error.includes('ACCESS_REQUIRED') ? '' : error} />
-            <Button className='w-full' type='submit' disabled={loading || !accessCode.trim()}>
+            <ErrorNotice
+              message={error.includes('ACCESS_REQUIRED') ? '' : error}
+            />
+            <Button
+              className='w-full'
+              type='submit'
+              disabled={loading || !accessCode.trim()}
+            >
               {loading && <Loader2 className='size-4 animate-spin' />}
               进入工作台
             </Button>
           </form>
-          <p className='text-xs leading-5 text-muted-foreground'>本演示使用合成业务样例。</p>
+          <p className='text-xs leading-5 text-muted-foreground'>
+            本演示使用合成业务样例。
+          </p>
         </div>
       </main>
     )
   }
 
   return (
-    <>
+    <div className='office-app flex min-w-0 flex-1 flex-col'>
       <Header fixed>
         <div className='me-auto hidden text-sm text-muted-foreground sm:block'>
           龙盛办公协同
@@ -338,8 +601,9 @@ export function OfficeApp() {
               setError('')
               setPreview(null)
               setReceiptTask(null)
-              receiptDraft.current = null
+              setPreviewReceiptContext('')
               setNotice('')
+              sessionStorage.setItem('office-role', value)
               setRole(value as Role)
             }}
             disabled={actionBusy || loading}
@@ -358,10 +622,16 @@ export function OfficeApp() {
         </div>
         <ThemeSwitch />
       </Header>
-      <Main className='flex flex-1 flex-col gap-6'>
+      <Main fixed={page === 'assistant'} className='flex min-w-0 flex-1 flex-col gap-6'>
         <div className='flex flex-wrap items-end justify-between gap-4'>
           <div>
-            <h1 className={page === 'matter' ? 'text-sm text-muted-foreground' : 'text-2xl font-semibold tracking-tight'}>
+            <h1
+              className={
+                page === 'matter'
+                  ? 'text-sm text-muted-foreground'
+                  : 'text-2xl font-semibold tracking-tight'
+              }
+            >
               {currentPage.label}
             </h1>
           </div>
@@ -393,42 +663,48 @@ export function OfficeApp() {
             </Button>
           </div>
         )}
-        {!snapshot && loading && (
+        {(!snapshot || snapshot.state.matter.id !== matterId) && loading && (
           <div className='flex items-center gap-3 p-8 text-sm text-muted-foreground'>
             <Loader2 className='size-4 animate-spin' />
             正在加载…
           </div>
         )}
-        {snapshot && (
+        {snapshot && snapshot.state.matter.id === matterId && (
           <div className={loading ? 'pointer-events-none opacity-60' : ''}>
             {page === 'home' && <Home snapshot={snapshot} {...businessProps} />}
-            {page === 'matter' && <Matter snapshot={snapshot} {...businessProps} />}
-            {page === 'assistant' && (
-              <Assistant
-                key={`${role}:${config?.mode}`}
-                role={role}
+            {page === 'knowledge' && <Knowledge key={matterId} snapshot={snapshot} sources={sources} openSource={openSource} refresh={refresh} />}
+            {page === 'matter' && (
+              <MatterList
                 snapshot={snapshot}
-                config={config}
-                history={history}
-                question={question}
-                setQuestion={setQuestion}
-                refresh={refresh}
-                openSource={openSource}
-                propose={(action) => void propose(action)}
-                openSettings={() => navigate('settings')}
+                viewMatter={businessProps.viewMatter}
               />
             )}
-            {page === 'settings' && (
-              <Settings
-                key={`${role}:${config?.model}:${config?.mode}:${snapshot.state.suppliers.find((s) => s.id === 'A')?.arrivalDay}`}
-                snapshot={snapshot}
+            {page === 'matter-detail' && (
+              <div className='space-y-4'>
+                <Button variant='ghost' onClick={() => navigate('matter')}>
+                  返回事项列表
+                </Button>
+                <Matter snapshot={snapshot} {...businessProps} />
+              </div>
+            )}
+            {page === 'assistant' && (
+              <Assistant
+                key={`${snapshot.workspaceId}:${snapshot.state.matter.id}:${role}:${config?.mode}`}
                 role={role}
+                snapshot={snapshot}
                 config={config}
                 history={history}
-                openSource={openSource}
-                busy={actionBusy}
-                propose={(action) => void propose(action)}
+                session={assistantSession}
+                updateSession={updateAssistantSession}
                 refresh={refresh}
+                openSource={openSource}
+                sources={sources}
+                propose={(action, expectedVersion) =>
+                  void propose(action, expectedVersion)
+                }
+                giveReceipt={giveReceipt}
+                viewMatter={() => navigate('matter-detail')}
+                actionBusy={actionBusy || loading}
               />
             )}
           </div>
@@ -456,12 +732,23 @@ export function OfficeApp() {
         </SheetContent>
       </Sheet>
       <ActionSheet
-        preview={preview} snapshot={snapshot} busy={actionBusy} error={confirmError}
-        sources={sources} openSource={openSource}
-        close={() => { setPreview(null); setConfirmError('') }}
+        preview={preview}
+        snapshot={snapshot}
+        busy={actionBusy}
+        error={confirmError}
+        sources={sources}
+        openSource={openSource}
+        close={() => {
+          setPreview(null)
+          setPreviewReceiptContext('')
+          setConfirmError('')
+        }}
         confirm={() => void confirm()}
-        recheck={() => { if (preview) void propose(preview.action) }}
-        viewMatter={() => navigate('matter')}
+        recheck={() => {
+          if (preview)
+            void propose(preview.action, undefined, previewReceiptContext)
+        }}
+        viewMatter={() => navigate('matter-detail')}
       />
       <Sheet
         open={!!receiptTask}
@@ -473,15 +760,156 @@ export function OfficeApp() {
           <SheetHeader>
             <SheetTitle>
               {receiptTask?.id === 'T-QA'
-                ? '供应商 B 质量资格核验'
+                ? (snapshot?.state.scenario ? '当前方案版本核验' : '当前方案版本质量核验')
                 : '提交部门处理回执'}
             </SheetTitle>
             <SheetDescription>
-              SUP-001 · M-01 · {receiptTask?.id === 'T-QA' ? '供应商 B · 发起依据 DEC-02' : receiptTask?.title}
+              {snapshot?.state.matter.id} · {snapshot?.state.matter.materialId}{' '}
+              ·{' '}
+              {receiptTask?.id === 'T-QA'
+                ? snapshot?.state.planVersions.find(
+                    (p) => p.id === receiptTask.planVersionId
+                  )?.title
+                : receiptTask?.title}
             </SheetDescription>
           </SheetHeader>
           <div className='flex-1 space-y-4 px-4'>
             <ErrorNotice message={error} />
+            {receiptTask?.id === 'T-QA' && (
+              <div className='rounded-lg border bg-muted/30 p-4 text-sm leading-7'>
+                <strong>本次核验对象</strong>
+                <p>
+                  {
+                    snapshot?.state.planVersions.find(
+                      (p) => p.id === receiptTask.planVersionId
+                    )?.title
+                  }
+                </p>
+                {snapshot?.presentation.options
+                  .filter(
+                    (o) =>
+                      o.supplierId ===
+                      snapshot.state.matter.planSelection?.supplierId
+                  )
+                  .map((o) => (
+                    <div key={o.supplierId}>
+                      <p>
+                        预计 D{o.arrivalDay} 到料 · {o.riskCount} 条到料风险
+                      </p>
+                      <p>
+                        涉及订单：
+                        {snapshot.analysis.orders.map((o) => o.id).join('、')}
+                      </p>
+                      <p>
+                        {snapshot.state.planVersions
+                          .find((p) => p.id === receiptTask.planVersionId)
+                          ?.constraints.join('；')}
+                      </p>
+                    </div>
+                  ))}
+                <p className='mt-2 text-muted-foreground'>
+                  请核对所选版本、订单影响及已有条件，人工填写结论和依据。
+                </p>
+              </div>
+            )}
+            {receiptTask?.id === 'T-PUR' && (
+              <div className='space-y-4'>
+                <div className='space-y-2'>
+                  <Label htmlFor='receipt-arrangement'>
+                    采购跟进安排（必填）
+                  </Label>
+                  <Textarea
+                    id='receipt-arrangement'
+                    value={receiptRecord.arrangement || ''}
+                    onChange={(e) =>
+                      setReceiptRecord({
+                        ...receiptRecord,
+                        arrangement: e.target.value,
+                      })
+                    }
+                    placeholder='说明已经确认的安排、对象及处理结果'
+                  />
+                </div>
+                <div className='space-y-2'>
+                  <Label htmlFor='receipt-pending'>仍待确认事项（必填）</Label>
+                  <Textarea
+                    id='receipt-pending'
+                    value={receiptRecord.pending || ''}
+                    onChange={(e) =>
+                      setReceiptRecord({
+                        ...receiptRecord,
+                        pending: e.target.value,
+                      })
+                    }
+                    placeholder='说明还需跟进什么；无待确认项请明确填写'
+                  />
+                </div>
+              </div>
+            )}
+            {receiptTask?.id === 'T-SALES' && (
+              <div className='space-y-4'>
+                <fieldset>
+                  <legend className='mb-2 text-sm font-medium'>
+                    涉及订单（必选）
+                  </legend>
+                  <div className='flex flex-wrap gap-3'>
+                    {snapshot?.analysis.orders.map((o) => (
+                      <label
+                        key={o.id}
+                        className='flex items-center gap-2 text-sm'
+                      >
+                        <input
+                          type='checkbox'
+                          checked={
+                            receiptRecord.orderIds?.includes(o.id) || false
+                          }
+                          onChange={(e) =>
+                            setReceiptRecord({
+                              ...receiptRecord,
+                              orderIds: e.target.checked
+                                ? [...(receiptRecord.orderIds || []), o.id]
+                                : (receiptRecord.orderIds || []).filter(
+                                    (id) => id !== o.id
+                                  ),
+                            })
+                          }
+                        />
+                        {o.id}
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
+                <div className='space-y-2'>
+                  <Label htmlFor='receipt-communication'>
+                    销售同步内容（必填）
+                  </Label>
+                  <Textarea
+                    id='receipt-communication'
+                    value={receiptRecord.communication || ''}
+                    onChange={(e) =>
+                      setReceiptRecord({
+                        ...receiptRecord,
+                        communication: e.target.value,
+                      })
+                    }
+                  />
+                </div>
+                <div className='space-y-2'>
+                  <Label htmlFor='receipt-result'>同步结果（必填）</Label>
+                  <Textarea
+                    id='receipt-result'
+                    value={receiptRecord.result || ''}
+                    onChange={(e) =>
+                      setReceiptRecord({
+                        ...receiptRecord,
+                        result: e.target.value,
+                      })
+                    }
+                    placeholder='说明同步结果及需要继续跟进的事项'
+                  />
+                </div>
+              </div>
+            )}
             {receiptTask?.id === 'T-QA' && (
               <div className='space-y-2'>
                 <Label>核验结果</Label>
@@ -498,7 +926,9 @@ export function OfficeApp() {
             )}
             <div className='space-y-2'>
               <Label htmlFor='office-evidence'>
-                {receiptTask?.id === 'T-QA' ? '核验凭据与处理说明' : '处理说明与凭据（必填）'}
+                {receiptTask?.id === 'T-QA'
+                  ? '核验凭据与处理说明'
+                  : snapshot?.state.scenario ? '处理说明与凭据（必填）' : '补充说明与凭据（可选）'}
               </Label>
               <Textarea
                 id='office-evidence'
@@ -507,18 +937,47 @@ export function OfficeApp() {
                 placeholder={
                   receiptTask?.id === 'T-QA'
                     ? '填写核验结论的依据与记录编号'
-                    : '填写已完成的安排、同步结果及相关记录'
+                    : '可补充记录编号或其他说明'
                 }
                 className='min-h-32'
               />
             </div>
+            <fieldset className='rounded-lg border p-4'>
+              <legend className='px-1 text-sm font-medium'>
+                关联当前事项来源（可选）
+              </legend>
+              <div className='space-y-3'>
+                {sources
+                  .filter((s) => !s.id.includes('PLAN-VERSIONS'))
+                  .map((s) => (
+                    <label
+                      key={s.id}
+                      className='flex items-start gap-2 text-sm leading-6'
+                    >
+                      <input
+                        className='mt-1'
+                        type='checkbox'
+                        checked={receiptSources.includes(s.id)}
+                        onChange={(e) =>
+                          setReceiptSources(
+                            e.target.checked
+                              ? [...receiptSources, s.id]
+                              : receiptSources.filter((id) => id !== s.id)
+                          )
+                        }
+                      />
+                      <span>{s.title}</span>
+                    </label>
+                  ))}
+              </div>
+            </fieldset>
           </div>
           <SheetFooter>
             <Button variant='outline' onClick={() => setReceiptTask(null)}>
               取消
             </Button>
             <Button
-              disabled={!evidence.trim() || actionBusy}
+              disabled={!receiptReady || actionBusy}
               onClick={receiptPreview}
             >
               检查提交内容
@@ -526,6 +985,6 @@ export function OfficeApp() {
           </SheetFooter>
         </SheetContent>
       </Sheet>
-    </>
+    </div>
   )
 }

@@ -1,0 +1,3 @@
+"row_key","snapshot_id","object_id","display_name","source_keys_json","p_arrivalDay","p_eligible","p_id","p_name","p_originalDay","p_quality","p_qualityLabel","p_revision","p_riskCount","p_selected"
+"delayed/Supplier:A","delayed","Supplier:A","供应商 A","[""delayed/Document:DOC-LEDGER"",""delayed/Document:DOC-STATE""]","9","false","A","供应商 A","3","approved","通过","2","2","true"
+"delayed/Supplier:B","delayed","Supplier:B","供应商 B","[""delayed/Document:DOC-LEDGER"",""delayed/Document:DOC-STATE""]","4","false","B","供应商 B","","pending","待核验","2","0","false"

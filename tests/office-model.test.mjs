@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
-import { createState, getDocuments } from '../server/office-domain.mjs'
+import { createState, getDocuments, applyAction } from '../server/office-domain.mjs'
 import { runOfficeChat, testProvider } from '../server/office-model.mjs'
 import { projectOffice } from '../server/office-ontology.mjs'
 
@@ -52,21 +52,21 @@ test('baseline can retrieve all original data and has equal preview action affor
   const state = createState()
   const { provider, requests } = await providerServer(t, (_body, n) => n % 2 === 1
     ? response(null, [call('search_documents')]) : response('读取了全部资料。'))
-  const baseline = await runOfficeChat({ state, question: '比较供应方案', role: 'lead', provider, variant: 'baseline' })
-  const ontology = await runOfficeChat({ state, question: '比较供应方案', role: 'lead', provider, variant: 'ontology' })
+  const baseline = await runOfficeChat({ state, question: '读取全部供应资料', role: 'lead', provider, variant: 'baseline' })
+  const ontology = await runOfficeChat({ state, question: '读取全部供应资料', role: 'lead', provider, variant: 'ontology' })
   assert.equal(baseline.status, 'completed')
   assert.equal(ontology.status, 'completed')
   assert.deepEqual(baseline.sources, ontology.sources)
   assert.deepEqual(baseline.sources.map(doc => doc.id), getDocuments(state).map(doc => doc.id))
   const baselineTools = requests[0].body.tools
   const ontologyTools = requests[2].body.tools
-  assert.deepEqual(baselineTools.map(item => item.function.name), ['search_documents', 'preview_action'])
+  assert.deepEqual(baselineTools.map(item => item.function.name), ['search_documents', 'preview_action','present_plans'])
   assert.deepEqual(baselineTools.find(item => item.function.name === 'preview_action'), ontologyTools.find(item => item.function.name === 'preview_action'))
   assert.equal(baselineTools.some(item => /execute|confirm/.test(item.function.name)), false)
 })
 
 test('permitted action is a preview only; caller role cannot be replaced by tool input', async t => {
-  const state = createState()
+  const state = applyAction(createState(),{type:'select_plan',supplierId:'B'},'lead')
   const { provider } = await providerServer(t, (_body, n) => n === 1
     ? response(null, [call('preview_action', { action: { type: 'request_quality' }, role: 'lead' })])
     : response('质量核验请求已准备，等待人工确认。'))
@@ -74,7 +74,7 @@ test('permitted action is a preview only; caller role cannot be replaced by tool
   assert.equal(run.status, 'completed')
   assert.equal(run.proposal.type, 'request_quality')
   assert.equal(state.tasks.length, 0)
-  assert.equal(state.revision, 1)
+  assert.equal(state.revision, 2)
 })
 
 test('ontology tools read the same graph objects and return only actual sources and timestamps', async t => {
@@ -192,4 +192,14 @@ test('DeepSeek v4 uses disabled thinking; connectivity reports actual reply and 
   assert.equal(requests[0].body.temperature, undefined)
   assert.equal(requests[0].body.max_tokens, 1800)
   assert.equal(result.reply, 'OK [REDACTED]')
+})
+
+
+test('business answers translate known technical tokens, omit tool references, and preserve real source IDs', async t => {
+  const { provider } = await providerServer(t, (_body, n) => n === 1 ? response(null, [call('search_documents')]) : response('事项 open；B pending；先 approve_keep_a，再 submit_receipt。[analyze_impact][DOC-RULES] ORD-001 DEC-01'))
+  const run = await runOfficeChat({ state: createState(), question: '下一步', role: 'lead', provider })
+  assert.equal(run.status, 'completed')
+  assert.match(run.answer, /事项 处理中；B 待核验；先 确认沿用 A 并跟进，再 提交回执/)
+  assert.doesNotMatch(run.answer, /analyze_impact|approve_keep_a|pending/)
+  assert.match(run.answer, /\[DOC-RULES\] ORD-001 DEC-01/)
 })

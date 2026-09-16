@@ -3,7 +3,7 @@ dist/
 .tanstack/
 .office-data/
 .runtime/
-.npm-cache/
+.vercel/
 .env
 .env.*
 !.env.example
@@ -12,9 +12,6 @@ dist/
 *.db
 *.key
 *.pem
-*.private.json
 coverage/
-**/__screenshots__/
-.vitest-attachments/
 *.tsbuildinfo
 .DS_Store

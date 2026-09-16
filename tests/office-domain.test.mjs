@@ -2,9 +2,12 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createState, analyze, getDocuments, previewAction, applyAction } from '../server/office-domain.mjs'
 
+const selectedState = () => applyAction(createState(), {type:'select_plan',supplierId:'B'}, 'lead')
 const run = (state, type, role = 'lead', args = {}) => applyAction(state, { type, ...args }, role)
-function qualityPass(state = createState()) {
+function qualityPass(state = selectedState()) {
+  if(!state.matter.planSelection)state=run(state,'select_plan','lead',{supplierId:'B'})
   state = run(state, 'request_quality', 'procurement')
+  state = run(state, 'accept_task', 'quality', { taskId: 'T-QA' })
   state = run(state, 'start_task', 'quality', { taskId: 'T-QA' })
   return run(state, 'submit_quality', 'quality', { taskId: 'T-QA', result: 'approved', evidence: '资格材料 QA-001 已核验' })
 }
@@ -26,19 +29,23 @@ test('初始数据与来源唯一、会议先后不覆盖有效决定', () => {
 })
 
 test('完整链路：预览不执行、质量通过、负责人批准、两份回执后关闭', () => {
-  let state = createState()
+  let state = selectedState()
   const preview = previewAction(state, { type: 'request_quality' }, 'procurement')
   assert.equal(preview.allowed, true); assert.equal(state.tasks.length, 0)
   state = qualityPass(state)
   assert.equal(analyze(state).effectiveDecisionId, 'DEC-01')
   state = run(state, 'approve_switch')
+  assert.ok(state.tasks.filter(task => task.id !== 'T-QA').every(task => task.status === 'pending_delivery'))
+  state = run(state, 'send_tasks')
   assert.equal(analyze(state).effectiveDecisionId, 'DEC-03')
   assert.equal(analyze(state).riskCount, 0)
   assert.deepEqual(state.tasks.map(task => task.id), ['T-QA', 'T-PUR', 'T-SALES'])
   assert.equal(state.decisions.find(item => item.id === 'DEC-01').status, 'superseded')
   assert.ok(getDocuments(state).some(doc => doc.id === 'DOC-DECISION-03' && doc.text.includes('QA-001')))
+  state = run(state, 'accept_task', 'procurement', { taskId: 'T-PUR' })
   state = run(state, 'start_task', 'procurement', { taskId: 'T-PUR' })
   state = run(state, 'submit_receipt', 'procurement', { taskId: 'T-PUR', evidence: '采购安排已确认' })
+  state = run(state, 'accept_task', 'sales', { taskId: 'T-SALES' })
   state = run(state, 'start_task', 'sales', { taskId: 'T-SALES' })
   state = run(state, 'submit_receipt', 'sales', { taskId: 'T-SALES', evidence: '两条订单交期已同步' })
   assert.equal(state.matter.status, 'open')
@@ -47,7 +54,7 @@ test('完整链路：预览不执行、质量通过、负责人批准、两份�
   assert.ok(state.tasks.every(task => task.status === 'completed'))
   assert.match(analyze(state).nextStep, /不代表/)
   assert.ok(state.events.every(event => event.id && Number.isFinite(Date.parse(event.at))))
-  assert.equal(state.revision, 10)
+  assert.equal(state.revision, 15)
 })
 
 test('角色权限与资格条件由执行层校验', () => {
@@ -63,7 +70,8 @@ test('角色权限与资格条件由执行层校验', () => {
 })
 
 test('质量拒绝后不得切换，可重开同任务且历史证据保留', () => {
-  let state = run(createState(), 'request_quality', 'procurement')
+  let state = run(selectedState(), 'request_quality', 'procurement')
+  state = run(state, 'accept_task', 'quality', { taskId: 'T-QA' })
   state = run(state, 'start_task', 'quality', { taskId: 'T-QA' })
   state = run(state, 'submit_quality', 'quality', { taskId: 'T-QA', result: 'rejected', evidence: '缺少检验报告' })
   assert.throws(() => run(state, 'approve_switch'), { code: 'QUALITY_NOT_APPROVED' })
@@ -72,6 +80,7 @@ test('质量拒绝后不得切换，可重开同任务且历史证据保留', ()
   assert.equal(state.tasks[0].history[0].receipt.evidence, '缺少检验报告')
   assert.equal(state.suppliers[1].quality, 'pending')
   assert.equal(state.tasks[0].receipt, undefined)
+  state = run(state, 'accept_task', 'quality', { taskId: 'T-QA' })
   state = run(state, 'start_task', 'quality', { taskId: 'T-QA' })
   state = run(state, 'submit_quality', 'quality', { taskId: 'T-QA', result: 'approved', evidence: '补齐报告后核验通过' })
   assert.equal(previewAction(state, { type: 'approve_switch' }, 'lead').allowed, true)
@@ -84,6 +93,8 @@ test('D9 与 D6 数据联动；切换后风险采用 B，比较仍分别计算 A
   state = run(state, 'set_arrival', 'lead', { supplierId: 'A', day: 6 })
   assert.equal(analyze(state).riskCount, 1)
   state = run(qualityPass(state), 'approve_switch')
+  assert.ok(state.tasks.filter(task => task.id !== 'T-QA').every(task => task.status === 'pending_delivery'))
+  state = run(state, 'send_tasks')
   state = run(state, 'set_arrival', 'lead', { supplierId: 'A', day: 9 })
   assert.equal(analyze(state).riskCount, 0)
   assert.deepEqual(analyze(state).options.map(item => item.riskCount), [2, 0])
@@ -91,7 +102,7 @@ test('D9 与 D6 数据联动；切换后风险采用 B，比较仍分别计算 A
 })
 
 test('发送失败消耗一次故障，可重试原任务且不重复创建', () => {
-  let state = run(createState(), 'arm_delivery_failure')
+  let state = run(selectedState(), 'arm_delivery_failure')
   state = run(state, 'request_quality', 'procurement')
   assert.equal(state.failNextDelivery, false)
   assert.equal(state.tasks[0].status, 'delivery_failed')
@@ -104,7 +115,7 @@ test('发送失败消耗一次故障，可重试原任务且不重复创建', ()
 })
 
 test('送达重试上限三次；同次批准仅第一个新任务受一次故障影响', () => {
-  let state = run(createState(), 'arm_delivery_failure')
+  let state = run(selectedState(), 'arm_delivery_failure')
   state = run(state, 'request_quality')
   for (let attempt = 2; attempt <= 3; attempt++) {
     state = run(state, 'arm_delivery_failure')
@@ -114,6 +125,8 @@ test('送达重试上限三次；同次批准仅第一个新任务受一次故�
   assert.throws(() => run(state, 'retry_delivery', 'lead', { taskId: 'T-QA' }), { code: 'RETRY_LIMIT' })
   let next = run(qualityPass(), 'arm_delivery_failure')
   next = run(next, 'approve_switch')
+  assert.ok(next.tasks.filter(task => task.id !== 'T-QA').every(task => task.status === 'pending_delivery'))
+  next = run(next, 'send_tasks')
   assert.equal(next.tasks[1].status, 'delivery_failed')
   assert.equal(next.tasks[2].status, 'delivered')
   assert.equal(next.tasks.length, 3)
@@ -121,27 +134,31 @@ test('送达重试上限三次；同次批准仅第一个新任务受一次故�
 
 test('缺少回执或证据时不能关闭，重复审批不得新增决定或任务', () => {
   assert.throws(() => run(createState(), 'close_matter'), { code: 'CLOSE_CONDITIONS_UNMET' })
-  let state = run(createState(), 'request_quality')
+  let state = run(selectedState(), 'request_quality')
+  state = run(state, 'accept_task', 'quality', { taskId: 'T-QA' })
   state = run(state, 'start_task', 'quality', { taskId: 'T-QA' })
   assert.throws(() => run(state, 'submit_quality', 'quality', { taskId: 'T-QA', result: 'approved', evidence: '  ' }), { code: 'EVIDENCE_REQUIRED' })
   state = run(qualityPass(), 'approve_switch')
+  assert.ok(state.tasks.filter(task => task.id !== 'T-QA').every(task => task.status === 'pending_delivery'))
+  state = run(state, 'send_tasks')
   assert.throws(() => run(state, 'approve_switch'), { code: 'ALREADY_APPROVED' })
   assert.throws(() => run(state, 'close_matter'), { code: 'CLOSE_CONDITIONS_UNMET' })
+  state = run(state, 'accept_task', 'procurement', { taskId: 'T-PUR' })
   state = run(state, 'start_task', 'procurement', { taskId: 'T-PUR' })
   state = run(state, 'submit_receipt', 'procurement', { taskId: 'T-PUR', evidence: '已确认' })
   assert.throws(() => run(state, 'close_matter'), { code: 'CLOSE_CONDITIONS_UNMET' })
 })
 
 test('冻结输入仍可预览和执行，原始会议保留，重置版本递增', () => {
-  const original = deepFreeze(createState())
+  const original = deepFreeze(selectedState())
   const originalMeetings = getDocuments(original).filter(doc => doc.id.startsWith('DOC-MEETING'))
   const action = deepFreeze({ type: 'request_quality' })
   assert.equal(previewAction(original, action, 'procurement').allowed, true)
   const next = applyAction(original, action, 'procurement')
-  assert.equal(original.revision, 1); assert.equal(original.tasks.length, 0)
-  assert.equal(next.revision, 2); assert.equal(next.tasks.length, 1)
+  assert.equal(original.revision, 2); assert.equal(original.tasks.length, 0)
+  assert.equal(next.revision, 3); assert.equal(next.tasks.length, 1)
   assert.deepEqual(getDocuments(next).filter(doc => doc.id.startsWith('DOC-MEETING')), originalMeetings)
   const reset = run(next, 'reset')
-  assert.equal(reset.revision, 3); assert.equal(reset.tasks.length, 0); assert.equal(reset.events.length, 1)
+  assert.equal(reset.revision, 4); assert.equal(reset.tasks.length, 0); assert.equal(reset.events.length, 1)
   assert.equal(reset.events[0].type, 'reset')
 })

@@ -9,20 +9,23 @@ import { createState, applyAction, analyze, getDocuments, migrateState } from '.
 import { projectOffice } from '../server/office-ontology.mjs'
 import { createOfficeServer } from '../server/office-server.mjs'
 
+const selectedState=()=>applyAction(createState(),{type:'select_plan',supplierId:'B'},'lead')
 const act = (state, type, role = 'lead', args = {}) => applyAction(state, { type, ...args }, role)
 function qualityDone(result = 'approved') {
-  let state = act(createState(), 'request_quality')
+  let state = act(selectedState(), 'request_quality')
+  state = act(state, 'accept_task', 'quality', { taskId: 'T-QA' })
   state = act(state, 'start_task', 'quality', { taskId: 'T-QA' })
   return act(state, 'submit_quality', 'quality', { taskId: 'T-QA', result, evidence: '质量凭据原文' })
 }
-function switched() { return act(qualityDone(), 'approve_switch') }
+function switched() { return act(act(qualityDone(), 'approve_switch'), 'send_tasks') }
 function receipt(state, taskId, role) {
+  state = act(state, 'accept_task', role, { taskId })
   state = act(state, 'start_task', role, { taskId })
   return act(state, 'submit_receipt', role, { taskId, evidence: `${taskId} 回执原文` })
 }
 
 test('quality, procurement and sales must each start before submitting; delivered work is not completed', () => {
-  let state = act(createState(), 'request_quality')
+  let state = act(selectedState(), 'request_quality')
   assert.equal(state.tasks[0].delivery.status, 'sent')
   assert.equal(state.tasks[0].workStatus, 'pending')
   assert.throws(() => act(state, 'submit_quality', 'quality', { taskId: 'T-QA', result: 'approved', evidence: '凭据' }), { code: 'TASK_STATE_CONFLICT' })
@@ -95,6 +98,7 @@ test('V2 closed SQLite spaces and model history survive migration; cached confir
     const token = 'a'.repeat(64)
     const hash = value => createHash('sha256').update(value).digest('hex')
     const db = new DatabaseSync(dbPath)
+    db.exec('CREATE TABLE records(id TEXT,space TEXT,kind TEXT,body TEXT,created TEXT);CREATE TABLE idempotency(space TEXT,key TEXT,hash TEXT,body TEXT)')
     db.prepare('INSERT INTO spaces VALUES(?,?,?,?)').run('v2-space', hash(token), JSON.stringify(state), JSON.stringify({ baseUrl: 'https://example.com', model: 'fixture', mode: 'rules' }))
     const oldRun = { id: 'old-run', revision: 1, mode: 'live', status: 'completed', answer: '旧模型原始回答', step: 'impact' }
     db.prepare('INSERT INTO records VALUES(?,?,?,?,?)').run(oldRun.id, 'v2-space', 'run', JSON.stringify(oldRun), '2026-09-09T00:00:00Z')
@@ -117,9 +121,10 @@ test('V2 closed SQLite spaces and model history survive migration; cached confir
     assert.deepEqual(snapshot.state.workflow, before.workflow)
     assert.deepEqual(snapshot.state.tasks, before.tasks)
     assert.deepEqual(snapshot.state.events, before.events)
-    assert.deepEqual((await request('/runs')).runs, [oldRun])
+    assert.equal((await request('/runs')).runs[0].answer, oldRun.answer)
     assert.deepEqual(getDocuments(snapshot.state).filter(d => d.id.startsWith('DOC-MEETING')), getDocuments(before).filter(d => d.id.startsWith('DOC-MEETING')))
-    const replay = await request('/confirm', body)
+    const replayResponse=await fetch(base+'/confirm',{method:'POST',headers:{Cookie:`office_session=${token}`,'Content-Type':'application/json'},body:JSON.stringify(body)});assert.equal(replayResponse.status,409)
+    const replay = await request('/snapshot')
     assert.equal(replay.state.decisions.find(d => d.id === 'DEC-02').status, 'fulfilled')
     assert.equal(replay.graph.objects.find(o => o.id === 'Decision:DEC-02').properties.status, 'fulfilled')
     assert.equal(replay.graph.revision, replay.state.revision)

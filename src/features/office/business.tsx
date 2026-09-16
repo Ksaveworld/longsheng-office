@@ -1,10 +1,5 @@
-import {
-  AlertCircle,
-  ArrowRight,
-  CheckCircle2,
-  Clock3,
-  Link2,
-} from 'lucide-react'
+import { useEffect } from 'react'
+import { ArrowRight, Clock3, CheckCircle2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -15,6 +10,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { EventDetail } from './event-view'
 import { OfficeGraph } from './graph'
 import { Section, Sources, Status } from './shared'
 import {
@@ -36,7 +32,7 @@ export type BusinessProps = {
   openSource: (source: Source) => void
   giveReceipt: (task: Task) => void
   ask: (question: string) => void
-  viewMatter: () => void
+  viewMatter: (id?: string, eventId?: string) => void
 }
 
 function receiptText(receipt: unknown) {
@@ -47,79 +43,17 @@ function receiptText(receipt: unknown) {
   )
 }
 function taskLabel(task: Task, closed: boolean) {
+  if (task.selectionInvalidated) return '历史任务 · 方案已改选'
   if (task.id !== 'T-QA' && task.receipt && !closed) return '已提交，待复核'
   if (task.status === 'delivery_failed') return '待处理 · 通知发送失败'
-  if (task.status === 'delivered') return '待处理'
+  if (task.status === 'delivered') return '待接收'
+  if (task.status === 'accepted') return '已接收，待开始'
   if (task.status === 'in_progress') return '处理中'
   if (task.qualityResult === 'rejected') return '核验不通过'
   if (task.status === 'completed')
     return task.id === 'T-QA' ? '核验通过' : '已完成'
   if (task.status === 'awaiting_review') return '已提交，待复核'
   return '待发送'
-}
-function situation({ state, analysis }: Snapshot) {
-  const qa = state.tasks.find((task) => task.id === 'T-QA')
-  const quality = state.suppliers.find(
-    (supplier) => supplier.id === 'B'
-  )?.quality
-  if (state.matter.status === 'closed')
-    return {
-      label: '已关闭',
-      waiting: '各岗位处理完成，负责人已复核',
-      detail: '本次办公事项已关闭，决定、核验凭据和部门回执已留档。',
-    }
-  if (state.matter.supplierId === 'B') {
-    if (analysis.canClose)
-      return {
-        label: '待负责人复核',
-        waiting: '业务负责人 · 复核两份回执',
-        detail: '采购、销售均已提交回执，等待最终复核。',
-      }
-    const missing = analysis.missingReceipts.map((id) =>
-      id === 'T-PUR' ? '采购经办' : id === 'T-SALES' ? '销售经办' : id
-    )
-    return {
-      label: '部门执行中',
-      waiting: missing.join('、') + ' · 提交处理回执',
-      detail:
-        '切换决定已生效，部门回执 ' +
-        (2 - analysis.missingReceipts.length) +
-        '/2。',
-    }
-  }
-  if (quality === 'rejected')
-    return {
-      label: '质量核验不通过',
-      waiting: '采购经办或业务负责人 · 重新发起核验',
-      detail: '本轮 B 路径不可执行，当前继续由 A 供货。',
-    }
-  if (
-    qa?.status === 'completed' &&
-    qa.qualityResult === 'approved' &&
-    quality === 'approved'
-  )
-    return {
-      label: '待负责人确认',
-      waiting: '业务负责人 · 决定是否切换',
-      detail: 'B 已通过质量核验，供应方案切换仍待批准。',
-    }
-  if (qa?.status === 'delivery_failed')
-    return {
-      label: '核验通知发送失败',
-      waiting: '质量负责人、采购经办或业务负责人 · 重试发送',
-      detail: '核验任务已创建，通知尚未送达。',
-    }
-  if (qa)
-    return {
-      label: '待质量核验',
-      waiting: '质量负责人 · 提交核验结果',
-      detail: '供应商 B 资格待核验，当前有效方案仍为 A。',
-    }
-  return {
-    label: '待方案核对',
-    waiting: '业务负责人或采购经办 · 核对方案并发起核验',
-    detail: '已关联订单与到料要求；切换 B 前还需质量核验与负责人批准。',
-  }
 }
 function Receipt({ task }: { task: Task }) {
   const history =
@@ -128,6 +62,9 @@ function Receipt({ task }: { task: Task }) {
         history?: {
           receipt?: unknown
           qualityResult?: string
+          status?: string
+          archivedAt?: string
+          archiveReason?: string
           completedAt?: string
         }[]
       }
@@ -139,6 +76,14 @@ function Receipt({ task }: { task: Task }) {
           <summary className='cursor-pointer underline decoration-border underline-offset-4'>
             查看回执
           </summary>
+          {!!task.receipt && typeof task.receipt === 'object' && (
+            <p className='mt-2 text-muted-foreground'>
+              {roleNames[(task.receipt as { actor: Role }).actor]} ·{' '}
+              {new Date((task.receipt as { at: string }).at).toLocaleString(
+                'zh-CN'
+              )}
+            </p>
+          )}
           {task.qualityResult && (
             <p className='mt-3 font-medium'>
               核验结论：{task.qualityResult === 'approved' ? '通过' : '不通过'}
@@ -152,25 +97,26 @@ function Receipt({ task }: { task: Task }) {
       {history.length > 0 && (
         <details>
           <summary className='cursor-pointer text-muted-foreground'>
-            历史核验 · {history.length} 次
+            {task.id === 'T-QA' ? '历史核验' : '历史处理记录'} · {history.length} 次
           </summary>
           <div className='mt-3 space-y-3'>
             {history.map((item, index) => (
               <div key={index} className='border-l-2 pl-3'>
                 <p>
                   第 {index + 1} 次 ·{' '}
-                  {item.qualityResult === 'approved'
+                  {task.id !== 'T-QA' ? (item.receipt ? '已留存处理回执' : '原任务状态已留存') : item.qualityResult === 'approved'
                     ? '通过'
                     : item.qualityResult === 'rejected'
                       ? '不通过'
                       : '未记录结论'}
                 </p>
+                {item.archiveReason && <p className='mt-1 text-muted-foreground'>{item.archiveReason}</p>}
                 <p className='mt-1 break-words whitespace-pre-wrap text-muted-foreground'>
                   {receiptText(item.receipt)}
                 </p>
-                {item.completedAt && (
+                {(item.completedAt || item.archivedAt) && (
                   <p className='mt-1 text-xs text-muted-foreground'>
-                    {new Date(item.completedAt).toLocaleString('zh-CN')}
+                    {new Date(item.completedAt || item.archivedAt!).toLocaleString('zh-CN')}
                   </p>
                 )}
               </div>
@@ -184,7 +130,6 @@ function Receipt({ task }: { task: Task }) {
 function TaskAction({
   task,
   snapshot,
-  role,
   propose,
   giveReceipt,
   busy,
@@ -192,180 +137,19 @@ function TaskAction({
   BusinessProps,
   'snapshot' | 'role' | 'propose' | 'giveReceipt' | 'busy'
 > & { task: Task }) {
-  if (snapshot.state.matter.status === 'closed') return null
-  if (
-    task.status === 'delivery_failed' &&
-    (task.assignee === role || ['lead', 'procurement'].includes(role))
-  )
-    return (
-      <Button
-        disabled={busy || task.attempts >= 3}
-        onClick={() => propose({ type: 'retry_delivery', taskId: task.id })}
-      >
-        {task.attempts >= 3 ? '已到重试上限' : '重试发送'}
-      </Button>
-    )
-  if (task.assignee !== role || task.receipt) return null
-  if (task.status === 'delivered')
-    return (
-      <Button
-        disabled={busy}
-        onClick={() => propose({ type: 'start_task', taskId: task.id })}
-      >
-        开始处理
-      </Button>
-    )
-  if (task.status === 'in_progress')
-    return (
-      <Button disabled={busy} onClick={() => giveReceipt(task)}>
-        {task.id === 'T-QA'
-          ? '提交核验结果'
-          : task.id === 'T-PUR'
-            ? '提交采购回执'
-            : '提交销售回执'}
-      </Button>
-    )
-  return null
-}
-export function BusinessActions({
-  snapshot,
-  role,
-  propose,
-  busy,
-}: Pick<BusinessProps, 'snapshot' | 'role' | 'propose' | 'busy'>) {
-  const { state, analysis } = snapshot
-  if (state.matter.status === 'closed') return null
-  const qa = state.tasks.find((task) => task.id === 'T-QA')
-  const quality = state.suppliers.find(
-    (supplier) => supplier.id === 'B'
-  )?.quality
-  if (
-    state.matter.supplierId === 'A' &&
-    (!qa || (qa.status === 'completed' && quality === 'rejected')) &&
-    ['lead', 'procurement'].includes(role)
-  )
-    return (
-      <Button
-        disabled={busy}
-        onClick={() => propose({ type: 'request_quality' })}
-      >
-        {qa ? '重新发起质量核验' : '准备质量核验'}
-      </Button>
-    )
-  if (role !== 'lead') return null
-  if (
-    state.matter.supplierId === 'A' &&
-    quality === 'approved' &&
-    qa?.status === 'completed' &&
-    qa.qualityResult === 'approved'
-  )
-    return (
-      <Button
-        disabled={busy}
-        onClick={() => propose({ type: 'approve_switch' })}
-      >
-        批准切换供应商 B
-      </Button>
-    )
-  if (analysis.canClose)
-    return (
-      <Button disabled={busy} onClick={() => propose({ type: 'close_matter' })}>
-        复核并关闭事项
-      </Button>
-    )
-  return null
-}
-function RoleAction(props: BusinessProps) {
-  const { state, analysis } = props.snapshot
-  const current = situation(props.snapshot)
-  const closed = state.matter.status === 'closed'
-  const own = state.tasks.find((task) => task.assignee === props.role)
-  const failed = state.tasks.find(
-    (task) =>
-      task.status === 'delivery_failed' &&
-      (task.assignee === props.role ||
-        ['lead', 'procurement'].includes(props.role))
-  )
-  const actionTask = own && !own.receipt ? own : failed
+  const action = snapshot.presentation.actions.find((a) => a.taskId === task.id)
+  if (!action) return null
   return (
-    <Section
-      title='我的下一步'
-      aside={<Badge variant='outline'>{roleNames[props.role]}</Badge>}
+    <Button
+      disabled={busy}
+      onClick={() =>
+        ['submit_quality', 'submit_receipt'].includes(action.type)
+          ? giveReceipt(task)
+          : propose({ type: action.type, taskId: task.id })
+      }
     >
-      <div className='space-y-4'>
-        {closed ? (
-          <div className='flex items-start gap-2 text-sm'>
-            <CheckCircle2 className='mt-0.5 size-4 shrink-0 text-emerald-600' />
-            <p>事项已关闭，可查看处理结果和凭据。</p>
-          </div>
-        ) : actionTask ? (
-          <>
-            <p className='font-medium'>{actionTask.title}</p>
-            <p className='text-sm text-muted-foreground'>
-              {actionTask.id} · {taskLabel(actionTask, closed)}
-            </p>
-            {actionTask.status === 'delivery_failed' ? (
-              <p className='text-sm leading-6 text-destructive'>
-                通知发送失败，任务尚未开始。已尝试 {actionTask.attempts} 次
-                {actionTask.attempts >= 3 ? '，请检查失败原因。' : '。'}
-              </p>
-            ) : (
-              <p className='text-sm leading-6 text-muted-foreground'>
-                {actionTask.id === 'T-QA'
-                  ? '核验供应商 B 的质量资格，并提交结论与凭据。'
-                  : actionTask.id === 'T-PUR'
-                    ? '依据生效决定确认采购安排，提交处理说明与凭据。'
-                    : '依据生效决定同步关联订单交期信息，提交处理说明与凭据。'}
-              </p>
-            )}
-            <TaskAction {...props} task={actionTask} />
-          </>
-        ) : (
-          <>
-            <p className='text-sm leading-6'>
-              {own?.receipt
-                ? '你的' +
-                  (own.id === 'T-QA' ? '核验结果' : '处理回执') +
-                  '已提交。'
-                : current.detail}
-            </p>
-            <p className='text-sm leading-6 text-muted-foreground'>
-              {current.waiting}
-            </p>
-            <BusinessActions {...props} />
-          </>
-        )}
-        {own && <Receipt task={own} />}
-        {!closed &&
-          props.role === 'lead' &&
-          state.matter.supplierId === 'B' &&
-          !analysis.canClose && (
-            <details className='border-t pt-4 text-sm'>
-              <summary className='cursor-pointer font-medium'>
-                查看关闭条件
-              </summary>
-              <ul className='mt-3 space-y-2 text-muted-foreground'>
-                <li>有效决定：{analysis.effectiveDecisionId}</li>
-                <li>
-                  质量核验：
-                  {state.suppliers.find((supplier) => supplier.id === 'B')
-                    ?.quality === 'approved'
-                    ? '已通过'
-                    : '未通过'}
-                </li>
-                {['T-PUR', 'T-SALES'].map((id) => (
-                  <li key={id}>
-                    {id === 'T-PUR' ? '采购回执' : '销售回执'}：
-                    {analysis.missingReceipts.includes(id)
-                      ? '待提交'
-                      : '已提交'}
-                  </li>
-                ))}
-              </ul>
-            </details>
-          )}
-      </div>
-    </Section>
+      {action.label}
+    </Button>
   )
 }
 export function Orders({ snapshot }: { snapshot: Snapshot }) {
@@ -376,7 +160,7 @@ export function Orders({ snapshot }: { snapshot: Snapshot }) {
           <TableRow>
             <TableHead>关联订单</TableHead>
             <TableHead>最迟到料</TableHead>
-            <TableHead>当前方案到料</TableHead>
+            <TableHead>当前方案预计到料</TableHead>
             <TableHead>判断</TableHead>
           </TableRow>
         </TableHeader>
@@ -446,7 +230,11 @@ export function Tasks(
                       : 'secondary'
                   }
                 >
-                  {taskLabel(task, closed)}
+                  {!closed && task.id !== 'T-QA' && snapshot.state.matter.executionApproval && !snapshot.analysis.executionApproved
+                    ? '历史执行记录 · 待重新批准'
+                    : snapshot.graph.objects.find(object => object.id === `Task:${task.id}`)?.properties.selectionInvalidated
+                      ? '历史任务 · 方案已改选'
+                      : taskLabel(task, closed)}
                 </Badge>
               </TableCell>
               <TableCell className='text-sm text-muted-foreground'>
@@ -474,109 +262,14 @@ export function Tasks(
     </div>
   )
 }
-export function Home(props: BusinessProps) {
-  const { snapshot, viewMatter, ask, role } = props
-  const { state, analysis } = snapshot
-  const supplier = state.suppliers.find((item) => item.id === 'A')
-  const current = situation(snapshot)
-  const closed = state.matter.status === 'closed'
-  const own = state.tasks.find((task) => task.assignee === role)
-  return (
-    <div className='space-y-6'>
-      {!closed && (
-        <div className='flex items-start gap-3 rounded-lg border bg-muted/25 px-5 py-4 text-sm'>
-          <AlertCircle className='mt-0.5 size-4 shrink-0' />
-          <div>
-            <p className='font-medium'>供应商 A 更新了到料日</p>
-            <p className='mt-1 text-muted-foreground'>
-              原料 {state.matter.materialId} · 原定 D{supplier?.originalDay} →
-              最新 D{supplier?.arrivalDay}
-            </p>
-          </div>
-        </div>
-      )}
-      <Section
-        title='供应商交期变更'
-        aside={<Badge variant='outline'>{current.label}</Badge>}
-      >
-        <div className='space-y-5'>
-          <p className='text-sm text-muted-foreground'>
-            {state.matter.id} · {state.matter.materialId} · 当前由供应商{' '}
-            {state.matter.supplierId} 供货
-          </p>
-          <div className='grid grid-cols-3 gap-4 border-y py-5'>
-            {[
-              [analysis.linkedCount, '关联订单'],
-              [analysis.riskCount, '当前方案到料风险'],
-              [analysis.pendingActionCount, '待处理动作'],
-            ].map(([count, label]) => (
-              <div key={label}>
-                <p className='text-2xl font-semibold tabular-nums'>{count}</p>
-                <p className='mt-1 text-xs leading-5 text-muted-foreground'>
-                  {label}
-                </p>
-              </div>
-            ))}
-          </div>
-          <div className='text-sm'>
-            <p>{current.detail}</p>
-            <p className='mt-2 text-muted-foreground'>{current.waiting}</p>
-          </div>
-          <div className='flex flex-wrap gap-2'>
-            <Button
-              onClick={() =>
-                ask(
-                  closed
-                    ? '这件事现在处理到哪里了？'
-                    : '供应商 A 延期会影响哪些订单？有几条需要处理？'
-                )
-              }
-            >
-              {closed ? '查询处理结果' : '继续处理'}
-              <ArrowRight className='size-4' />
-            </Button>
-            <Button variant='outline' onClick={viewMatter}>
-              {closed ? '查看事项记录' : '进入事项处理'}
-            </Button>
-          </div>
-        </div>
-      </Section>
-      <Section
-        title='我的待办'
-        aside={
-          <span className='text-sm text-muted-foreground'>
-            {roleNames[role]}
-          </span>
-        }
-      >
-        <div className='flex flex-wrap items-center justify-between gap-4'>
-          <div className='min-w-0 space-y-2'>
-            <p className='text-sm font-medium'>
-              {closed
-                ? '本事项已完成'
-                : own
-                  ? own.title
-                  : role === 'lead' || role === 'procurement'
-                    ? current.label
-                    : '当前暂无待办'}
-            </p>
-            <p className='text-sm text-muted-foreground'>
-              {own ? taskLabel(own, closed) : current.waiting}
-            </p>
-          </div>
-          <Button variant='outline' onClick={viewMatter}>
-            查看事项
-            <ArrowRight className='size-4' />
-          </Button>
-        </div>
-      </Section>
-    </div>
-  )
-}
-function Paths({ snapshot }: { snapshot: Snapshot }) {
+export function Paths({ snapshot }: { snapshot: Snapshot }) {
   const { state, analysis } = snapshot
   return (
-    <Section title='到料方案比较'>
+    <Section title='方案预期对比'>
+      <p className='mb-4 text-sm leading-6 text-muted-foreground'>
+        A/B 同按数据 v{state.revision}{' '}
+        计算。预计日期及风险差异不代表已到货或实际避免损失。
+      </p>
       <div className='grid gap-4 md:grid-cols-2'>
         {analysis.options.map((option) => {
           const selected = state.matter.supplierId === option.supplierId
@@ -592,12 +285,20 @@ function Paths({ snapshot }: { snapshot: Snapshot }) {
                 <h3 className='text-sm font-semibold'>{option.name}</h3>
                 <Badge variant={selected ? 'default' : 'outline'}>
                   {selected
-                    ? '当前执行'
+                    ? '当前生效'
                     : option.supplierId === 'B'
                       ? '候选方案'
                       : '原方案'}
                 </Badge>
               </div>
+              {state.matter.planSelection?.supplierId === option.supplierId && (
+                <p className='mt-2 text-xs font-medium'>
+                  已选择此处理方案
+                  {!analysis.executionApproved
+                    ? ' · 待完成前置条件与负责人确认'
+                    : ''}
+                </p>
+              )}
               <p className='mt-4 text-sm'>
                 预计{' '}
                 <strong className='text-xl tabular-nums'>
@@ -634,24 +335,9 @@ function Paths({ snapshot }: { snapshot: Snapshot }) {
                 ))}
               </div>
               <div className='mt-4 space-y-2 border-t pt-4 text-sm'>
-                <p>
-                  质量资格：
-                  {option.quality === 'approved'
-                    ? '已通过'
-                    : option.quality === 'rejected'
-                      ? '未通过'
-                      : '待核验'}
-                </p>
+                <p>方案核验条件：所有版本均需质量岗位人工核验。</p>
                 <p className='text-muted-foreground'>
-                  {selected
-                    ? '当前依据 ' + analysis.effectiveDecisionId + ' 执行'
-                    : option.supplierId === 'B'
-                      ? option.quality === 'rejected'
-                        ? '本轮质量条件不满足，不能切换。'
-                        : option.quality === 'approved'
-                          ? '质量条件已满足，仍需负责人批准。'
-                          : '质量核验通过并经负责人批准后才可切换。'
-                      : '原有效决定已被替代。'}
+                  选择意向、方案核验和负责人批准分别记录。
                 </p>
               </div>
             </div>
@@ -659,212 +345,343 @@ function Paths({ snapshot }: { snapshot: Snapshot }) {
         })}
       </div>
       <p className='mt-4 text-xs leading-5 text-muted-foreground'>
-        比较范围：到料时间、质量资格、批准条件；未包含价格、产能及运输条件。
+        比较范围：到料时间、方案核验条件、批准条件；未包含价格、产能及运输条件。
       </p>
     </Section>
   )
 }
 export function Matter(props: BusinessProps) {
+  return props.snapshot.state.scenario ? <EventDetail {...props}/> : <SupplyMatter {...props}/>
+}
+function SupplyMatter(props: BusinessProps) {
   const { snapshot, sources, openSource, ask } = props
-  const { state, analysis } = snapshot
-  const current = situation(snapshot)
-  const supplierA = state.suppliers.find((supplier) => supplier.id === 'A')
-  const effective = state.decisions.find(
-    (decision) => decision.id === analysis.effectiveDecisionId
+  const { state, analysis, presentation: p } = snapshot
+  const closed = state.matter.status === 'closed',
+    outcome = state.matter.outcome
+  const effective = state.decisions.find((d) => d.status === 'effective')
+  const archived = outcome?.analysis || analysis
+  const approvedPlan = outcome?.plan || state.planVersions.find(v => v.id === state.matter.executionApproval?.planVersionId)
+  const approvedPlanNumber = approvedPlan ? state.planVersions.filter(v => v.supplierId === approvedPlan.supplierId).findIndex(v => v.id === approvedPlan.id) + 1 : 0
+  const approval = outcome?.approval || state.matter.executionApproval
+  const evidenceSources = (ids: string[] | undefined) => (
+    <Sources
+      sources={sources.filter((s) => ids?.includes(s.id))}
+      open={openSource}
+    />
   )
-  const sourceFor = (id: string, title: string): Source =>
-    sources.find((source) => source.id === id) ?? { id, title }
+  useEffect(() => {
+    const id = new URLSearchParams(location.hash.split('?')[1] || '').get(
+      'event'
+    )
+    if (!id) return
+    const entry = document.getElementById('event-' + id)
+    const details = entry?.closest('details')
+    if (details) details.open = true
+    entry?.scrollIntoView({ block: 'center' })
+  }, [state.matter.id])
   return (
-    <div className='space-y-6'>
-      <div className='flex flex-wrap items-center justify-between gap-3 border-b pb-4'>
-        <div className='flex flex-wrap items-center gap-3'>
-          <h2 className='text-xl font-semibold tracking-tight'>供应商交期变更</h2>
-          <span className='font-mono text-sm text-muted-foreground'>
-            {state.matter.id}
-          </span>
-          <Badge variant='outline'>{current.label}</Badge>
-          <span className='text-sm text-muted-foreground'>
-            原料 {state.matter.materialId}
-          </span>
-        </div>
-        <Button
-          variant='ghost'
-          size='sm'
-          onClick={() => ask('这件事当前的有效决定是什么，还需要谁做什么？')}
-        >
-          询问业务助手
-          <ArrowRight className='size-4' />
-        </Button>
-      </div>
-      <div className='grid items-start gap-6 xl:grid-cols-[minmax(0,1.4fr)_minmax(300px,1fr)]'>
-        <Section title='当前情况'>
-          <div className='space-y-5 text-sm'>
-            <p className='text-base leading-7'>
-              供应商 A 到料日从 D{supplierA?.originalDay} 延至 D
-              {supplierA?.arrivalDay}
+    <div className='office-matter min-w-0 space-y-6'>
+      <div className='rounded-xl border bg-card p-5 sm:p-6'>
+        <div className='flex flex-wrap items-start justify-between gap-3'>
+          <div>
+            <h2 className='text-2xl font-semibold'>
+              {closed ? '办公协同处理结果' : p.title}
+            </h2>
+            <p className='mt-2 text-sm text-muted-foreground'>
+              {state.matter.id} · 原料 {state.matter.materialId} ·
+              供应商交期变更
             </p>
-            <div className='flex flex-wrap gap-x-6 gap-y-2 text-muted-foreground'>
-              <span>
-                关联{' '}
-                <strong className='text-foreground'>
-                  {analysis.linkedCount}
-                </strong>{' '}
-                条订单
-              </span>
-              <span>
-                当前方案{' '}
-                <strong
-                  className={
-                    analysis.riskCount ? 'text-destructive' : 'text-foreground'
-                  }
-                >
-                  {analysis.riskCount}
-                </strong>{' '}
-                条到料风险
-              </span>
-            </div>
-            <div className='border-t pt-4'>
-              <p className='text-xs text-muted-foreground'>当前有效决定</p>
-              <p className='mt-2 font-medium'>
-                {analysis.effectiveDecisionId} · 由供应商{' '}
-                {state.matter.supplierId} 供货
+          </div>
+          <Badge variant='outline'>{p.stage}</Badge>
+        </div>
+        <p className='mt-5 text-base leading-7'>{p.conclusion}</p>
+        {closed ? (
+          <div className='mt-5 grid gap-4 border-t pt-5 sm:grid-cols-3'>
+            <div>
+              <p className='text-sm text-muted-foreground'>已批准方案</p>
+              <p className='mt-1 text-lg font-semibold'>
+                {approvedPlan?.title || '历史批准记录'}
               </p>
-              <p className='mt-2 leading-6 text-muted-foreground'>
-                {effective?.text}
-              </p>
-              {effective && (
-                <Button
-                  variant='link'
-                  className='mt-2 h-auto p-0 text-sm'
-                  onClick={() =>
-                    openSource(sourceFor(effective.sourceId, '有效决定原文'))
-                  }
-                >
-                  查看决定依据
-                </Button>
-              )}
+              {approvedPlanNumber > 0 && <p className='mt-1 text-sm text-muted-foreground'>该路径第 {approvedPlanNumber} 版</p>}
             </div>
-            <div className='border-t pt-4'>
-              <p className='text-xs text-muted-foreground'>当前责任</p>
-              <p className='mt-2 leading-6'>{current.waiting}</p>
+            <div>
+              <p className='text-sm text-muted-foreground'>关闭时到料风险</p>
+              <p className='mt-1 text-lg font-semibold'>
+                {outcome?.review.riskCount ??
+                  state.matter.review?.riskCount ??
+                  '历史记录未提供'}{' '}
+                条
+              </p>
+            </div>
+            <div>
+              <p className='text-sm text-muted-foreground'>最终复核</p>
+              <p className='mt-1 text-lg font-semibold'>
+                {state.matter.review
+                  ? roleNames[state.matter.review.reviewedBy]
+                  : '历史记录未提供'}
+              </p>
             </div>
           </div>
-        </Section>
-        <RoleAction {...props} />
+        ) : (
+          <div className='mt-4 rounded-lg bg-muted/50 p-4 text-sm leading-6'>
+            <strong>
+              当前等待：
+              {p.waitingRoles.map((r) => roleNames[r]).join('、') ||
+                '查看处理记录'}
+            </strong>
+            {p.blockers.map((b, i) => (
+              <p key={i} className='mt-2'>
+                {b}
+              </p>
+            ))}
+          </div>
+        )}
+        {closed && (
+          <p className='mt-4 text-sm text-muted-foreground'>
+            {outcome
+              ? '结果保留关闭当时的数据版本 v' + outcome.revision + '。'
+              : '此事项沿用已有历史记录，未补造结果快照。'}{' '}
+            协同办结不代表原料到货、风险已消除或订单交付。
+          </p>
+        )}
       </div>
-      <Section
-        title='任务与回执'
-        aside={
-          <span className='text-xs text-muted-foreground'>
-            {analysis.pendingActionCount} 项待处理动作
-          </span>
-        }
-      >
-        <Tasks {...props} readOnly />
+      {closed && (
+        <Section title='已收到的处理证据'>
+          <div className='grid gap-4 md:grid-cols-2'>
+            {(
+              outcome?.receipts ||
+              state.tasks
+                .filter((t) => ['T-PUR', 'T-SALES'].includes(t.id) && t.receipt)
+                .map((t) => ({
+                  taskId: t.id,
+                  title: t.title,
+                  ...(t.receipt as {
+                    evidence: string
+                    actor: Role
+                    at: string
+                    sourceIds?: string[]
+                  }),
+                }))
+            ).map((r) => (
+              <article key={r.taskId} className='min-w-0 rounded-lg border p-4'>
+                <div className='flex items-center gap-2'>
+                  <CheckCircle2 className='size-4 text-emerald-700' />
+                  <h3 className='font-semibold'>
+                    {r.taskId === 'T-PUR' ? '采购跟进安排' : '销售同步结果'}
+                  </h3>
+                </div>
+                <p className='mt-3 text-sm leading-7 break-words whitespace-pre-wrap'>
+                  {r.evidence}
+                </p>
+                <p className='mt-3 text-sm text-muted-foreground'>
+                  {roleNames[r.actor]} ·{' '}
+                  {new Date(r.at).toLocaleString('zh-CN')}
+                </p>
+                <div className='mt-3'>{evidenceSources(r.sourceIds)}</div>
+              </article>
+            ))}
+          </div>
+          {state.matter.review && (
+            <p className='mt-4 text-sm leading-7'>
+              负责人于{' '}
+              {new Date(state.matter.review.reviewedAt).toLocaleString('zh-CN')}{' '}
+              复核两份回执。
+              {(outcome?.review.riskCount ?? state.matter.review.riskCount) > 0
+                ? '当前档案仍保留到料风险，应继续跟进实际到货。'
+                : '按关闭时台账未发现预计到料超期，实际收货及订单履约需另行核实。'}
+            </p>
+          )}
+        </Section>
+      )}
+      <Section title='起因与影响'>
+        <p className='mb-4 text-base leading-7'>
+          供应商 A 通知预计到料由 D{p.originalDay} 变为 D{p.noticeArrivalDay}。
+          {closed ? '关闭时' : '当前'}生效方案{' '}
+          {outcome?.selection?.supplierId || state.matter.supplierId} 关联{' '}
+          {archived.linkedCount} 条订单，{archived.riskCount} 条存在到料风险。
+        </p>
+        <Orders snapshot={{ ...snapshot, analysis: archived }} />
+        <p className='mt-3 text-sm text-muted-foreground'>
+          D 为相对演示日期。到料超期不等同于成品交付延期。
+        </p>
+        <div className='mt-4'>
+          {evidenceSources(
+            sources
+              .filter((s) =>
+                ['DOC-NOTICE', 'DOC-LEDGER'].some(
+                  (id) => s.id === id || s.id === id + '-' + state.matter.id
+                )
+              )
+              .map((s) => s.id)
+          )}
+        </div>
       </Section>
-      <Paths snapshot={snapshot} />
-      <Section title='决定与来源'>
-        <div className='divide-y'>
-          {state.decisions.map((decision) => (
-            <div
-              key={decision.id}
-              className='space-y-3 py-4 first:pt-0 last:pb-0'
-            >
-              <div className='flex flex-wrap items-center gap-3'>
-                <span className='font-mono text-sm'>{decision.id}</span>
-                <Status value={decision.status} />
-                <span className='text-xs text-muted-foreground'>
-                  {decision.id === 'DEC-01'
-                    ? '第一次会议'
-                    : decision.id === 'DEC-02'
-                      ? '第二次会议'
-                      : '负责人批准记录'}
-                </span>
-              </div>
-              <p className='text-sm leading-7'>{decision.text}</p>
-              <Button
-                variant='link'
-                className='h-auto p-0 text-sm'
-                onClick={() =>
-                  openSource(
-                    sourceFor(decision.sourceId, decision.id + ' 来源原文')
-                  )
-                }
-              >
-                查看来源原文
-              </Button>
+      <Section title='方案与决定'>
+        <div className='grid gap-5 sm:grid-cols-3'>
+          {[
+            ['当前生效', state.matter.supplierId],
+            ['选择意向', state.matter.planSelection?.supplierId || '尚未选择'],
+            [
+              '本次批准',
+              analysis.executionApproved ? state.matter.supplierId : '尚未批准',
+            ],
+          ].map(([label, value]) => (
+            <div key={label}>
+              <p className='text-sm text-muted-foreground'>{label}</p>
+              <p className='mt-2 text-lg font-semibold'>{value}</p>
             </div>
           ))}
         </div>
+        <p className='mt-5 border-t pt-4 text-base leading-7'>
+          {(outcome?.decision || effective)?.text}
+        </p>
+        {state.matter.planSelection && (
+          <p className='mt-3 text-sm leading-7'>
+            选择依据：
+            {outcome?.selection?.reason || state.matter.planSelection.reason}
+          </p>
+        )}
+        {approval && <p className='mt-3 text-sm leading-7'>
+          批准记录：{roleNames[approval.approvedBy]}于 {new Date(approval.approvedAt).toLocaleString('zh-CN')} 批准该版本。
+          {outcome?.qualityReview ? `质量核验依据：${outcome.qualityReview.evidence}` : '方案核验依据可在下方记录中复核。'}
+        </p>}
+        <div className='mt-4'>
+          {evidenceSources(
+            sources
+              .filter((s) =>
+                [
+                  effective?.sourceId,
+                  'DOC-PLAN-SELECTION',
+                  'DOC-KEEP-A',
+                  'QA-B-001',
+                  'DOC-DECISION-03',
+                ].some(
+                  (id) =>
+                    id && (s.id === id || s.id === id + '-' + state.matter.id)
+                )
+              )
+              .map((s) => s.id)
+          )}
+        </div>
+        <details className='mt-5 border-t pt-4'>
+          <summary className='cursor-pointer font-medium'>
+            方案核验依据 · {state.planReviews.length} 次
+          </summary>
+          <div className='mt-4 space-y-4'>
+            {state.planReviews.map((r, i) => (
+              <article
+                key={r.id}
+                className='rounded-lg border p-4 text-sm leading-7'
+              >
+                <strong>
+                  第 {i + 1} 次 · {r.result === 'approved' ? '通过' : '不通过'}{' '}
+                  ·{' '}
+                  {r.planVersionId === state.matter.planSelection?.planVersionId
+                    ? '当前选择版本'
+                    : '历史版本'}
+                </strong>
+                <p>
+                  {
+                    state.planVersions.find((v) => v.id === r.planVersionId)
+                      ?.title
+                  }
+                </p>
+                <p className='whitespace-pre-wrap'>{r.evidence}</p>
+                <p className='text-muted-foreground'>
+                  {roleNames[r.reviewedBy]} ·{' '}
+                  {new Date(r.reviewedAt).toLocaleString('zh-CN')}
+                </p>
+                {evidenceSources(r.sourceIds)}
+              </article>
+            ))}
+            {!state.planReviews.length && (
+              <p className='text-sm text-muted-foreground'>
+                尚无方案核验记录。
+              </p>
+            )}
+          </div>
+        </details>
+        <details className='mt-5 border-t pt-4'>
+          <summary className='cursor-pointer font-medium'>
+            查看方案预期差异与历史决定
+          </summary>
+          <div className='mt-4 space-y-4'>
+            <Paths snapshot={snapshot} />
+            {state.decisions
+              .filter((d) => d.id !== effective?.id)
+              .map((d) => (
+                <article key={d.id} className='rounded-lg border p-4'>
+                  <p className='flex items-center gap-3'>
+                    {d.id}
+                    <Status value={d.status} />
+                  </p>
+                  <p className='my-3 text-sm leading-7'>{d.text}</p>
+                  {evidenceSources(
+                    sources
+                      .filter(
+                        (s) =>
+                          s.id === d.sourceId ||
+                          s.id === d.sourceId + '-' + state.matter.id
+                      )
+                      .map((s) => s.id)
+                  )}
+                </article>
+              ))}
+          </div>
+        </details>
       </Section>
-      <details className='rounded-lg border p-5'>
-        <summary className='cursor-pointer text-sm font-semibold'>
-          关联订单与影响依据
+      <Section title='执行与证据'>
+        <p className='mb-4 text-base leading-7'>
+          {closed ? '已完成岗位办理及负责人复核。' : p.blockers.join(' ')}
+        </p>
+        <Tasks {...props} readOnly />
+      </Section>
+      <details className='rounded-xl border p-5'>
+        <summary className='cursor-pointer text-base font-semibold'>
+          来源与处理记录 · {state.events.length} 条
         </summary>
         <div className='mt-5 space-y-5'>
-          <Orders snapshot={snapshot} />
-          <div className='space-y-2'>
-            {analysis.orders.map((order) => (
-              <div
-                key={order.id}
-                className='flex items-start gap-2 rounded-md bg-muted/30 p-3 text-sm leading-6'
+          <Sources sources={sources} open={openSource} />
+          <ol className='space-y-5'>
+            {[...state.events].reverse().map((event) => (
+              <li
+                id={'event-' + event.id}
+                key={event.id}
+                className='flex scroll-mt-8 gap-3 rounded-lg p-3 target:bg-muted'
               >
-                <Link2 className='mt-1 size-4 shrink-0 text-muted-foreground' />
-                <span>
-                  延期通知 → 供应商 A → {state.matter.materialId} → {order.id} →
-                  最迟 D{order.requiredDay} 到料
-                </span>
-              </div>
+                <Clock3 className='mt-1 size-4 shrink-0 text-muted-foreground' />
+                <div className='min-w-0'>
+                  <p className='font-medium'>
+                    {p.events.find((e) => e.id === event.id)?.summary}
+                  </p>
+                  <p className='mt-2 text-sm leading-7 break-words'>
+                    {event.message}
+                  </p>
+                  <p className='mt-1 text-sm text-muted-foreground'>
+                    {roleNames[event.actor as Role]} ·{' '}
+                    {new Date(event.at).toLocaleString('zh-CN')}
+                  </p>
+                </div>
+              </li>
             ))}
-          </div>
-          <Sources
-            sources={sources.filter((source) =>
-              ['DOC-NOTICE', 'DOC-LEDGER', 'DOC-RULES'].includes(source.id)
-            )}
-            open={openSource}
-          />
+          </ol>
         </div>
       </details>
-      <details className='rounded-lg border p-5'>
-        <summary className='cursor-pointer text-sm font-semibold'>
-          处理记录与全部资料
+      <details className='rounded-xl border p-5'>
+        <summary className='cursor-pointer text-base font-semibold'>
+          高级视图 · 业务关系 / 业务对象 / 模型结构
         </summary>
-        <div className='mt-5 space-y-6'>
-          <Sources
-            sources={sources.filter((source) => source.id !== 'DEMO-STATE')}
-            open={openSource}
-          />
-          {state.events.length ? (
-            <ol className='space-y-5'>
-              {[...state.events].reverse().map((event) => (
-                <li key={event.id} className='flex gap-3'>
-                  <Clock3 className='mt-0.5 size-4 shrink-0 text-muted-foreground' />
-                  <div>
-                    <p className='text-sm leading-6'>{event.message}</p>
-                    <p className='mt-1 text-xs text-muted-foreground'>
-                      {roleNames[event.actor as Role] || event.actor} ·{' '}
-                      {new Date(event.at).toLocaleString('zh-CN')}
-                    </p>
-                  </div>
-                </li>
-              ))}
-            </ol>
-          ) : (
-            <p className='text-sm text-muted-foreground'>尚无处理记录。</p>
-          )}
-          <p className='text-xs text-muted-foreground'>
-            数据版本 {state.revision}
-          </p>
-        </div>
-      </details>
-      <details className='rounded-lg border p-5'>
-        <summary className='cursor-pointer text-sm font-semibold'>
-          高级视图 · 业务关系
-        </summary>
+        <p className='mt-4 text-sm leading-7'>
+          从延期通知关联物料与订单，核对会议决定，再追踪责任岗位与回执。
+        </p>
         <div className='mt-5'>
           <OfficeGraph graph={snapshot.graph} openSource={openSource} />
         </div>
       </details>
+      <Button className='h-12 w-full text-base' onClick={() => ask('')}>
+        返回业务助手继续办理
+        <ArrowRight className='size-4' />
+      </Button>
     </div>
   )
 }

@@ -1,0 +1,204 @@
+/* Visual styling only. Layout, brand and business copy follow 6f154a0. */
+.office-app {
+  --primary: #2453dc;
+  --primary-foreground: #fff;
+  --ring: #2453dc;
+  --background: #f5f7fa;
+  --card: #fff;
+  --muted: #f5f7fa;
+  --muted-foreground: #66748c;
+  --foreground: #1b263b;
+  --border: #dfe5ef;
+  color: var(--foreground);
+  background: var(--background);
+  font-family: 'Microsoft YaHei', 'PingFang SC', system-ui, sans-serif;
+}
+.dark .office-app {
+  --background: #111827;
+  --card: #1b2434;
+  --muted: #232f43;
+  --muted-foreground: #a7b4ca;
+  --foreground: #eef2fa;
+  --border: #344056;
+  --primary: #82a3ff;
+  --primary-foreground: #111827;
+}
+.office-app > header {
+  background: var(--card);
+}
+.office-app [data-slot='card'] {
+  border-radius: 12px;
+  background: var(--card);
+  box-shadow: 0 1px 2px #172a4a05;
+}
+.office-app details {
+  background: var(--card);
+}
+
+/* The desktop shell owns sidebar sizing; the mobile drawer has its own width. */
+@media (min-width: 768px) and (max-width: 1279px) {
+  [data-slot='sidebar-wrapper']:has(.office-app) > [data-slot='sidebar'] {
+    --sidebar-width: 14rem;
+  }
+}
+
+.office-app main:has(.office-home) {
+  gap: 16px;
+  padding-top: 16px;
+}
+.office-home {
+  container-type: inline-size;
+  container-name: office-home;
+}
+/* Section headings group the cards without a second padded card around them. */
+.office-home [data-slot='card'] {
+  gap: 12px;
+  padding-block: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.office-home [data-slot='card-header'],
+.office-home [data-slot='card-content'] {
+  padding-inline: 0;
+}
+.office-home-matter {
+  overflow-wrap: anywhere;
+}
+@container office-home (min-width: 752px) {
+  .office-home-columns {
+    grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr);
+  }
+}
+
+/* Conversation fills the remaining viewport; only messages/history scroll. */
+.office-app:has(.office-chat) {
+  min-height: 0;
+  overflow: hidden;
+}
+.office-app:has(.office-chat) > header {
+  flex-shrink: 0;
+}
+.office-app main:has(.office-chat) {
+  gap: 12px;
+  padding-block: 12px;
+}
+.office-app main > div:has(> .office-chat) {
+  flex: 1;
+  min-height: 0;
+}
+.office-chat {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--card);
+}
+.office-chat[data-history-open='true'] {
+  grid-template-columns: var(--history-width, 240px) 6px minmax(0, 1fr);
+}
+.office-chat-history {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px;
+  background: var(--muted);
+}
+.office-history-resize {
+  position: relative;
+  cursor: col-resize;
+  touch-action: none;
+  background: var(--muted);
+  border-right: 1px solid var(--border);
+}
+.office-history-resize::after {
+  content: '';
+  position: absolute;
+  inset: 0 -4px;
+  z-index: 2;
+}
+.office-history-resize:hover,
+.office-history-resize:focus-visible,
+.office-chat[data-resizing='true'] .office-history-resize {
+  background: var(--primary);
+  outline: 0;
+}
+.office-chat[data-resizing='true'] {
+  user-select: none;
+}
+.office-chat-main {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.office-chat-heading {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.office-chat-messages {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 16px;
+  overflow-wrap: anywhere;
+  scrollbar-gutter: stable;
+}
+.office-chat-messages [data-slot='card'] {
+  gap: 12px;
+  padding-block: 16px;
+}
+.office-chat-messages [data-slot='card-header'],
+.office-chat-messages [data-slot='card-content'] {
+  padding-inline: 16px;
+}
+.office-chat-composer {
+  flex-shrink: 0;
+  padding: 10px 16px;
+  border-top: 1px solid var(--border);
+  background: var(--card);
+}
+.office-chat-input {
+  field-sizing: content;
+  min-height: 44px;
+  max-height: 112px;
+  overflow: auto;
+}
+.office-history-drawer {
+  width: min(85vw, 320px);
+  max-width: 320px;
+  gap: 0;
+}
+.office-history-drawer .office-chat-history {
+  height: 100%;
+}
+.office-history-drawer .office-history-title {
+  padding-right: 30px;
+}
+@media (max-width: 640px) {
+  .office-app main:has(.office-chat) {
+    padding: 8px;
+    gap: 8px;
+  }
+  .office-chat-heading {
+    padding: 8px;
+  }
+  .office-chat-messages {
+    padding: 12px;
+  }
+  .office-chat-composer {
+    padding: 8px 12px;
+  }
+  .office-chat-messages [data-slot='card-header'],
+  .office-chat-messages [data-slot='card-content'] {
+    padding-inline: 12px;
+  }
+}
