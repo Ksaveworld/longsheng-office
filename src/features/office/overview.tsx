@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import type { BusinessProps } from './business'
 import { Section } from './shared'
+import { matterHandling } from './handling'
 import { type Snapshot, roleNames } from './types'
 const ordered = (all: Snapshot[]) =>
   [...all].sort(
@@ -55,6 +56,7 @@ export function Home(
   const card = (s: Snapshot, compact = false) => {
     const p = s.presentation,
       closed = p.category === 'closed'
+    const handling = matterHandling(s, props.role)
     return (
       <article
         key={s.state.matter.id}
@@ -78,7 +80,7 @@ export function Home(
             </p>
           </button>
           <Badge variant={p.priority === 0 ? 'destructive' : 'outline'}>
-            {p.stage}
+            {handling.current}
           </Badge>
         </div>
         <p className='mt-2 text-sm text-muted-foreground'>
@@ -114,6 +116,7 @@ export function Home(
         <p className='text-sm leading-6'>
           {closed ? p.conclusion : p.blockers[0] || p.conclusion}
         </p>
+        <p className='mt-2 text-sm'><strong>我的任务：</strong>{handling.myTask}</p>
         {!compact && s.analysis.orders.some((o) => o.atRisk) && (
           <p className='mt-2 text-sm text-muted-foreground'>
             重点关注：

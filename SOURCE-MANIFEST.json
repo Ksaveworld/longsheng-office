@@ -1,7 +1,27 @@
 {
-  "release": "20260916",
-  "deploymentId": "dpl_FpQmF7iEjWGWVdVJxzhP2ezjWHwc",
-  "createdAt": "2026-09-16T06:35:44.897786+00:00",
+  "release": "20260916-journey-acceptance",
+  "branch": "codex/demo-journey-acceptance-20260916",
+  "baseCommit": "550c70e",
+  "initialSnapshotCommit": "db1d7ddce15ee0c454151832fe3b513af9e91624",
+  "createdAt": "2026-09-16T07:17:47.357995+00:00",
+  "deployment": "Not deployed in this review; source branch only.",
+  "hashSemantics": "SHA-256 of staged Git blob bytes, excluding this manifest. Git checkout line-ending conversion can change working-tree byte hashes.",
+  "verification": {
+    "officeTests": {
+      "passed": 145,
+      "failed": 0
+    },
+    "typecheck": "passed",
+    "build": "passed",
+    "targetedLint": "passed",
+    "browserChecks": 14,
+    "realUserStudy": "not performed",
+    "runtimeSourceComparison": {
+      "files": 294,
+      "differences": 0,
+      "normalization": "CRLF to LF; also checked package/lock, Vite/TypeScript configs, HTML and Vercel config"
+    }
+  },
   "files": [
     {
       "path": ".env.example",
@@ -34,6 +54,16 @@
       "sha256": "0512d97ad8bf787ce79b607331c2f2b49bab85bd2389dd94def70c8f451d9c66"
     },
     {
+      "path": "LICENSE",
+      "bytes": 1066,
+      "sha256": "d28c723c33a18dfed6af67b1a0ac368724f79bcb80750d3e080dbcf8dedb9e4b"
+    },
+    {
+      "path": "README.md",
+      "bytes": 5643,
+      "sha256": "837d25a1aaf45929607729aa8564227a18769728155c66c8e66f250283f7eb0e"
+    },
+    {
       "path": "api/office.mjs",
       "bytes": 2202,
       "sha256": "e4a2e314348b8aca13b5512a2feb37651637e5c6f6b3960bcc042906397f9a6a"
@@ -42,6 +72,141 @@
       "path": "components.json",
       "bytes": 431,
       "sha256": "67158a98ef41159df946dc441131e5b4916c0a2b7c0bdb4e67d1dd961f237db1"
+    },
+    {
+      "path": "deploy/Dockerfile",
+      "bytes": 219,
+      "sha256": "bd892d69513c39eb55d58a46de8ff26a524344ce72e1f65995f3386c07f1a01f"
+    },
+    {
+      "path": "docs/DEMO-JOURNEY-ACCEPTANCE-20260916.md",
+      "bytes": 7276,
+      "sha256": "387968e3dba4e74ee3eb828eb6956cb08e320bc3da306c93793d8f66794a142a"
+    },
+    {
+      "path": "docs/DEMO-USER-GUIDE.md",
+      "bytes": 4924,
+      "sha256": "f17f7942beb04ff56abb4b93b92ba18a7eee8761bc83f089e5d160093b3ca46e"
+    },
+    {
+      "path": "docs/REVISION-CANONICAL.md",
+      "bytes": 5272,
+      "sha256": "fd94b94aaf10c6f22cbbc0ec7c9d6e934f5cbb4f4a2b403f5f78fcc4dee794e0"
+    },
+    {
+      "path": "docs/SYNC-20260916.md",
+      "bytes": 1609,
+      "sha256": "230c18257e0e18c4b3dbb15bc2b2b2149a7b41b90d77a846e94c668d033e3ac7"
+    },
+    {
+      "path": "docs/evidence/journey-review-20260916/audit.json",
+      "bytes": 823,
+      "sha256": "459eebabdec32453a6d18dfe78336e4788fa8aba25ead10c20a36352432d0925"
+    },
+    {
+      "path": "docs/evidence/journey-review-20260916/before-assistant.png",
+      "bytes": 82467,
+      "sha256": "3f3475379274fb237529f08214d27ccff77497a228d2781fc41fdb24742af943"
+    },
+    {
+      "path": "docs/evidence/journey-review-20260916/before.json",
+      "bytes": 320,
+      "sha256": "80b8b9021e7892a0d5f189579d5668c8eda5750da85880ae6ff26a6686df6dcd"
+    },
+    {
+      "path": "docs/evidence/journey-review-20260916/quality-case-handoff.png",
+      "bytes": 66376,
+      "sha256": "9e05b461e3f20dc747924ad2f2ad9434deea1acb8e90536340446b2136a85cf6"
+    },
+    {
+      "path": "docs/evidence/journey-review-20260916/read-failure.png",
+      "bytes": 86430,
+      "sha256": "7e101acd4b9029edaf2d9fc3fcebe12a3381f5f6529b0075fd5dc958ff91c84b"
+    },
+    {
+      "path": "docs/evidence/journey-review-20260916/response-lost.png",
+      "bytes": 92716,
+      "sha256": "793ac070981f31bf5abf56c869fe38bb38ed1a0c919d9de3e0f87d9a45669cd8"
+    },
+    {
+      "path": "docs/evidence/journey-review-20260916/review-rejected.png",
+      "bytes": 58703,
+      "sha256": "3bdb6b30b7cd167598aa5e065d454d6967ed3652da2d02d289821ae1b5984cec"
+    },
+    {
+      "path": "docs/evidence/journey-review-20260916/stale-version.png",
+      "bytes": 89201,
+      "sha256": "66a54b57a22b3ad9beb5fc52ffed9c8b124b3ab771b46cc76bf7a3b4441eae21"
+    },
+    {
+      "path": "docs/evidence/journey-review-20260916/submission-failed.png",
+      "bytes": 88026,
+      "sha256": "2e85ca6aeae04b2c1f35d3240408c1f4c44ad612759c26c09c80f4da4265ea65"
+    },
+    {
+      "path": "docs/evidence/journey-review-20260916/summary-assistant-390.png",
+      "bytes": 60632,
+      "sha256": "8031cdea87c3d4230def24bc72d734370d0f5ffc5358384f887576cd667fc69c"
+    },
+    {
+      "path": "docs/evidence/journey-review-20260916/summary-assistant.png",
+      "bytes": 92955,
+      "sha256": "c129595d369475f410a483a3875a3e1e56bf3be2f28c84530d03f2e654cd2f9b"
+    },
+    {
+      "path": "docs/evidence/journey-review-20260916/summary-home.png",
+      "bytes": 167428,
+      "sha256": "978146f75515c00957c19cdb05ae969404735db77d82d9de8619bed760c152a3"
+    },
+    {
+      "path": "docs/evidence/journey-review-20260916/summary-knowledge.png",
+      "bytes": 258338,
+      "sha256": "900cd8607ca0faff666f1f8007821d235cb579ffad54e8f94ac43101f67cde15"
+    },
+    {
+      "path": "docs/evidence/journey-review-20260916/summary-matter-detail.png",
+      "bytes": 62183,
+      "sha256": "70562ece9c8637fde090b9ea8ceb614940a0c9b65b67b3aaa1a88865ab1a102e"
+    },
+    {
+      "path": "docs/evidence/representatives-20260916/01-home-four-cases.png",
+      "bytes": 169549,
+      "sha256": "e72eb735add5ad1b40ae64ec5c6c1f5f4f6945d0c607f93e401c679a79e10070"
+    },
+    {
+      "path": "docs/evidence/representatives-20260916/02-matter-list.png",
+      "bytes": 89222,
+      "sha256": "15b19e2c7af8ad5ce438be1ae5fc994e6a762b9d981be0af452cafb431c669fc"
+    },
+    {
+      "path": "docs/evidence/representatives-20260916/03-live-impact-query.png",
+      "bytes": 115309,
+      "sha256": "5bafc8667a31d8a78df231d6d99f49e9712eafed9cfe9d420d4e8e5bfbaa9b61"
+    },
+    {
+      "path": "docs/evidence/representatives-20260916/04-submitted-handoff.png",
+      "bytes": 66949,
+      "sha256": "63f13a62fb52d29b79e75216750d5948b3568ac915b17b3f37e3728fdc9ef676"
+    },
+    {
+      "path": "docs/evidence/representatives-20260916/05-handoff-390.png",
+      "bytes": 44123,
+      "sha256": "e08e04a69cfaafeee4d0fc7ee530d0a940cc978d3ba1c246ca02e20e5e59c83a"
+    },
+    {
+      "path": "docs/evidence/representatives-20260916/06-quality-complete.png",
+      "bytes": 63577,
+      "sha256": "d35e8d5b4e8c27adb2b58c214fb57ed1c88e801b43979ffae313285ba4072279"
+    },
+    {
+      "path": "docs/evidence/representatives-20260916/07-closed.png",
+      "bytes": 60367,
+      "sha256": "22a1698e4031d53bec027ae0de6c822c6d15db3aff2dcf909dfad701b4e773c9"
+    },
+    {
+      "path": "docs/evidence/representatives-20260916/verification.json",
+      "bytes": 10674,
+      "sha256": "cb6f9a27231159136288f40ae63ed3bfdb7216b7b8206b718cae89cc3a003352"
     },
     {
       "path": "eslint.config.js",
@@ -57,11 +222,6 @@
       "path": "knip.config.ts",
       "bytes": 212,
       "sha256": "a7c412f59ae2d207aa493c849c5f45bb20b5257188a90d77e4df71ef49adca5b"
-    },
-    {
-      "path": "LICENSE",
-      "bytes": 1066,
-      "sha256": "d28c723c33a18dfed6af67b1a0ac368724f79bcb80750d3e080dbcf8dedb9e4b"
     },
     {
       "path": "package-lock.json",
@@ -119,9 +279,9 @@
       "sha256": "91ebc165f83da2039dd46f91d1c6d3348757e209af059e7a001b40acf198a3e9"
     },
     {
-      "path": "README.md",
-      "bytes": 4997,
-      "sha256": "a39e95f783a40e594c76ae4e5a8fb80e4a8c77123289978bbe356e559f687bb6"
+      "path": "scripts/preview-representatives.mjs",
+      "bytes": 954,
+      "sha256": "d96f01ec8dc2cc6714dda02f1463bb91b27a4b3e5c12e6415fbcf677c7d9a922"
     },
     {
       "path": "scripts/start-local-demo.mjs",
@@ -129,9 +289,24 @@
       "sha256": "6b820341e7aa8f71ee99dea2bcef52ebe1dcfe40739cf248ffbc9dfa5e5b1711"
     },
     {
+      "path": "scripts/verify-journey-audit.mjs",
+      "bytes": 8765,
+      "sha256": "c67189f4157e2c7514b13cfbdde0c0384d1696729b3f8cf38a42949d52d4c589"
+    },
+    {
+      "path": "scripts/verify-representatives.mjs",
+      "bytes": 12779,
+      "sha256": "5c994b6885eadcecd04808dfdf3fd888320b207b393a240a010a94e7d84cb385"
+    },
+    {
       "path": "server/dataos-read-client.mjs",
       "bytes": 6564,
       "sha256": "e932f3c34431626a0341d26ecea791dce18aaf37accdc84eac4e781e710084a5"
+    },
+    {
+      "path": "server/office-catalog.mjs",
+      "bytes": 524,
+      "sha256": "7b73adb62fa16cd7cc39ba95f5b55d3c03366af91106731a9ae2367dca81f5ad"
     },
     {
       "path": "server/office-domain.mjs",
@@ -140,8 +315,8 @@
     },
     {
       "path": "server/office-events.mjs",
-      "bytes": 18633,
-      "sha256": "299e37fb6f0131299cefd7ce4f2fd7aabb6919f04abf5c2948d50c15991569fc"
+      "bytes": 18689,
+      "sha256": "0525f42873f7e8f2e949e3b7ced5efa0058d9ee35ef2e26932893ab0dc658c53"
     },
     {
       "path": "server/office-model.mjs",
@@ -165,8 +340,8 @@
     },
     {
       "path": "server/office-seeds.mjs",
-      "bytes": 2025,
-      "sha256": "054c3d4ec3502295c81349dee37e38c26857bd51281aadcfcb07b131b945207c"
+      "bytes": 2163,
+      "sha256": "53153e27d3b6dd2c7b18ec73ecd93fd683f07f7250b1414583772267e57a5d48"
     },
     {
       "path": "server/office-server.mjs",
@@ -175,8 +350,8 @@
     },
     {
       "path": "server/office-service.mjs",
-      "bytes": 19154,
-      "sha256": "b86fda3c3ad1de23837d373c8e04ec9ec302d79a606f2070613e4b0e7cc73263"
+      "bytes": 19406,
+      "sha256": "6efa42c947edcfc7bd0f7122fbc95fed46f577415b2ea41cbe10078b836182ff"
     },
     {
       "path": "server/office-store.mjs",
@@ -885,8 +1060,8 @@
     },
     {
       "path": "src/features/office/action-sheet.tsx",
-      "bytes": 9978,
-      "sha256": "8547f58ffc48595d4a17c06add0784150540b569b4627cc460f42f5d3be43b33"
+      "bytes": 10680,
+      "sha256": "41c06123b8171979cc7a550a573db7e9285633739b05fafc816674c2e7874bb3"
     },
     {
       "path": "src/features/office/api.ts",
@@ -895,23 +1070,33 @@
     },
     {
       "path": "src/features/office/assistant.tsx",
-      "bytes": 51260,
-      "sha256": "26cfb69b8d0640fe06bd24f37d2521c369e24ac8b26e8d44eb7ff7bda10cb3c3"
+      "bytes": 48832,
+      "sha256": "f482795c0b838827909977e726ff1ae25e54fc529b6071f4de42307e75b24630"
     },
     {
       "path": "src/features/office/business.tsx",
-      "bytes": 26530,
-      "sha256": "0ee8a8919ba0f531e2c02c2098244e02c17ab44451711dcf084c88dbb0e41ca5"
+      "bytes": 26536,
+      "sha256": "f7740f8746c90d5bf35fd9a3f4e22286f08575c2ede69b1f4db9cc14c87a8c27"
     },
     {
       "path": "src/features/office/event-view.tsx",
-      "bytes": 9565,
-      "sha256": "b631e61497794d9d8dbe0865fb4c1a39a19e756bf88a9026ecb413e822f122dc"
+      "bytes": 9571,
+      "sha256": "3c47fdae8b26e201399dc7b9b8e900c977f7bc0bc9431a4591d7c46c27c31cc0"
     },
     {
       "path": "src/features/office/execution-trace.tsx",
       "bytes": 5450,
       "sha256": "abca73ba24bf053c1cf50570e6b8adf556f52ee9a3d4ed9910ae08679b6f6949"
+    },
+    {
+      "path": "src/features/office/graph/RelationshipGraph.d.ts",
+      "bytes": 644,
+      "sha256": "5447ea526ab0c201ade749bc6cefdb31e95cf480db2de77269fb311cc2b42aaa"
+    },
+    {
+      "path": "src/features/office/graph/RelationshipGraph.jsx",
+      "bytes": 24831,
+      "sha256": "0fbb26c833b518db33773b5dcff257bca2481c97160fcd7a5899689bd3a813c4"
     },
     {
       "path": "src/features/office/graph/adapter.ts",
@@ -934,29 +1119,34 @@
       "sha256": "3b9188d4df80d9a68fb63348ceea7e4e210bb642222135953c7732e78f31964e"
     },
     {
-      "path": "src/features/office/graph/RelationshipGraph.d.ts",
-      "bytes": 644,
-      "sha256": "5447ea526ab0c201ade749bc6cefdb31e95cf480db2de77269fb311cc2b42aaa"
-    },
-    {
-      "path": "src/features/office/graph/RelationshipGraph.jsx",
-      "bytes": 24831,
-      "sha256": "0fbb26c833b518db33773b5dcff257bca2481c97160fcd7a5899689bd3a813c4"
-    },
-    {
       "path": "src/features/office/graph/types.ts",
       "bytes": 803,
       "sha256": "2217b1104adb8f79775e9f6eb723cdacff5840c5a0ae2e2a16838a3556cffd91"
     },
     {
+      "path": "src/features/office/handling-summary.tsx",
+      "bytes": 942,
+      "sha256": "c4ef8a55d97e2ce669636e66f961ea4f639c58ba0fa4886a7a6817a350da8cd4"
+    },
+    {
+      "path": "src/features/office/handling.ts",
+      "bytes": 1756,
+      "sha256": "4ee0394728cfed647f6464fb6c7c963c5473417f9b0ad70faf4fc9e61c946370"
+    },
+    {
       "path": "src/features/office/index.tsx",
-      "bytes": 34021,
-      "sha256": "c0a74b6d2dc770192f944ba1d968a0bb5c0cb13bfe862e5034505b32356544de"
+      "bytes": 36535,
+      "sha256": "89ebf6276e59d485e859470ccc62fdb289e5f54e0dee93aee7ec2eedb82a1108"
     },
     {
       "path": "src/features/office/knowledge.tsx",
-      "bytes": 14150,
-      "sha256": "f54bff563260a2e0edb392ef48a79a4921464ee25da645a26e59a388682238aa"
+      "bytes": 14253,
+      "sha256": "0a44ad3bbaf1c46e15a3397d798111a746c827506c1b772645cc9d6266eef7ce"
+    },
+    {
+      "path": "src/features/office/matter-work.tsx",
+      "bytes": 8629,
+      "sha256": "c34e24b86b9cd180dfd0f64a714da8468a65f1193a6dd68ecf5485910fec1e48"
     },
     {
       "path": "src/features/office/office.css",
@@ -970,8 +1160,8 @@
     },
     {
       "path": "src/features/office/overview.tsx",
-      "bytes": 16110,
-      "sha256": "152fc197f95840ba2340452dee5699db00d950a582824c267cd1546830279f45"
+      "bytes": 16043,
+      "sha256": "af0afcfd486b3ad5e6c58cd2f8210684bd2f1e6332fd3c5efe0c0282d6478233"
     },
     {
       "path": "src/features/office/review-panel.tsx",
@@ -1324,6 +1514,11 @@
       "sha256": "72c7d8d5be768c7a6308ad58e169211993b38dbc0a2f05d05ddc87a8f7a7f60d"
     },
     {
+      "path": "src/routeTree.gen.ts",
+      "bytes": 27598,
+      "sha256": "f3fcb77764d6337995b98d3d61650eabb162756b67d2db703e30cbb3315e4a2c"
+    },
+    {
       "path": "src/routes/(auth)/forgot-password.tsx",
       "bytes": 221,
       "sha256": "a6e7d0533c15557bb0b46b1c8b6537f52488dae73749edef3bb00e160a2c553f"
@@ -1484,11 +1679,6 @@
       "sha256": "8e8cfcc5f34e0bdb9c6f4e1eebbf730a447278e3d3bb49c69e18bec76fe98711"
     },
     {
-      "path": "src/routeTree.gen.ts",
-      "bytes": 27598,
-      "sha256": "f3fcb77764d6337995b98d3d61650eabb162756b67d2db703e30cbb3315e4a2c"
-    },
-    {
       "path": "src/stores/auth-store.test.ts",
       "bytes": 2388,
       "sha256": "ca6c7caa6b03f32dc2d49e34dc479cda5efb6361973dfe547299fc516b289f92"
@@ -1540,8 +1730,13 @@
     },
     {
       "path": "tests/office-api.test.mjs",
-      "bytes": 4486,
-      "sha256": "9c279faa33a789670afb2d7e872b9dd13062b0e91874a7f61aeb3b4338f5c7ac"
+      "bytes": 4485,
+      "sha256": "1b8cd077578a3cf12a54312aacbc1e1195b461ad15453fcf4bb00406bd3d74b3"
+    },
+    {
+      "path": "tests/office-catalog.test.mjs",
+      "bytes": 3167,
+      "sha256": "6ae643a39d454b949afd54ebae6f70584be27440f5d0c6ae4bed4bb47bd999ed"
     },
     {
       "path": "tests/office-compatibility.test.mjs",
@@ -1550,8 +1745,8 @@
     },
     {
       "path": "tests/office-complete.test.mjs",
-      "bytes": 7220,
-      "sha256": "63b9b5d134ed13a3ced55a320bd63fc9d1801e6de0f69a13da8ac4f144d73458"
+      "bytes": 7286,
+      "sha256": "1ba57c7b12e17ce50d30ba0583dfd2bd8f49c6721ed96f91123b0e2b68471cd6"
     },
     {
       "path": "tests/office-dataos-client.test.mjs",
@@ -1565,8 +1760,8 @@
     },
     {
       "path": "tests/office-events.test.mjs",
-      "bytes": 10524,
-      "sha256": "ac3bead7c04c8c7488beb5fcf4e5b4c44e7248441a3bd0462cbf1f183cc0b2fc"
+      "bytes": 10513,
+      "sha256": "2dfb58790fb53f278459fff757ae8c0602b77735b51c1fa23e24337b9a4e4b45"
     },
     {
       "path": "tests/office-model-repair.test.mjs",
@@ -1595,8 +1790,8 @@
     },
     {
       "path": "tests/office-presentation.test.mjs",
-      "bytes": 10418,
-      "sha256": "710258cb11b114880d562673ae1f0e63e5e760b08f4f3541ffde4e2f651b5850"
+      "bytes": 10484,
+      "sha256": "16d96edd0e067d211a4e3a6bd9df9d39ddc651b95a7b27690d8407efc04d84d6"
     },
     {
       "path": "tests/office-public.test.mjs",
@@ -1611,7 +1806,7 @@
     {
       "path": "tests/office-service.test.mjs",
       "bytes": 8994,
-      "sha256": "6dfc633155c754ce3213994a8bd0c6aa13bfdceb9ecbc70057c1630b66163f34"
+      "sha256": "5338e9a1e9145270ff2b73dc28c6709427ad75805cd50d01a3617169f242e839"
     },
     {
       "path": "tests/office-storage.test.mjs",
@@ -1630,8 +1825,8 @@
     },
     {
       "path": "tests/office-value.test.mjs",
-      "bytes": 43551,
-      "sha256": "a34afbda750876cee0237382e6a4da28764f0a03c36e37161c50007070904d7b"
+      "bytes": 43661,
+      "sha256": "b9fad926ab89ec30e1bb2892b074145d4feeb71518e7b9ac3979f6d424d9f7aa"
     },
     {
       "path": "tsconfig.app.json",
@@ -1657,21 +1852,6 @@
       "path": "vite.config.ts",
       "bytes": 1130,
       "sha256": "20b8a572430da09650e1620ba317fe54f5f0d49adaaec89fbed817a570417b1e"
-    },
-    {
-      "path": "docs/SYNC-20260916.md",
-      "bytes": 1609,
-      "sha256": "230c18257e0e18c4b3dbb15bc2b2b2149a7b41b90d77a846e94c668d033e3ac7"
     }
-  ],
-  "deliveryOnlyChanges": [
-    "README.md",
-    ".env.example",
-    ".gitignore",
-    "scripts/start-local-demo.mjs (same Node runtime and project npm cache)",
-    "tests/office-order-chain.test.mjs (fixture path only)",
-    "tests/fixtures/supply-fixtures.json",
-    "GitHub README and sync notes"
-  ],
-  "knownSecretAndPatternScan": "passed"
+  ]
 }

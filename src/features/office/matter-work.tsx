@@ -3,6 +3,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import type { BusinessProps } from './business'
 import { EventPlans } from './event-view'
+import { matterHandling, handlingActionLabel } from './handling'
 import { Sources } from './shared'
 import { roleNames, type Presentation, type Role } from './types'
 
@@ -20,33 +21,7 @@ export function MatterWork({
   const { state, presentation: p, analysis } = snapshot
   const [showPlans, setShowPlans] = useState(false)
   const selection = state.matter.planSelection
-  const qa = state.tasks.find(
-    (t) =>
-      t.id === 'T-QA' &&
-      t.planVersionId === selection?.planVersionId &&
-      !t.selectionInvalidated
-  )
-  const closed = state.matter.status === 'closed'
-  const waitingForReview =
-    !closed &&
-    !analysis.executionApproved &&
-    p.stage === '核验中' &&
-    qa &&
-    ['delivered', 'accepted', 'in_progress'].includes(qa.status)
-  const current = waitingForReview
-    ? qa.status === 'delivered'
-      ? `等待${roleNames[qa.assignee]}接收`
-      : qa.status === 'accepted'
-        ? `等待${roleNames[qa.assignee]}开始核验`
-        : `${roleNames[qa.assignee]}核验中`
-    : p.stage
-  const ownActions = p.actions.filter(
-    (a) => a.type !== 'choose_plan' || p.waitingRoles.includes(role)
-  )
-  const primary = ownActions[0]
-  const nextRoles = p.waitingRoles.map((r) => roleNames[r]).join('、')
-  const reviewSubmitted =
-    waitingForReview && role !== qa.assignee && qa.status === 'delivered'
+  const { qa, closed, waitingForReview, current, ownActions, primary, nextRoles, reviewSubmitted } = matterHandling(snapshot, role)
   function act(action: Presentation['actions'][number]) {
     if (action.type === 'choose_plan') {
       setShowPlans(true)
@@ -62,15 +37,7 @@ export function MatterWork({
       propose(payload)
     }
   }
-  const label = (action: Presentation['actions'][number]) => {
-    if (['request_quality', 'request_event_review'].includes(action.type))
-      return '准备核验申请'
-    if (action.taskId === 'T-QA' && action.type === 'accept_task')
-      return '接收核验申请'
-    if (action.taskId === 'T-QA' && action.type === 'start_task')
-      return '开始核验'
-    return action.label
-  }
+  const label = handlingActionLabel
   return (
     <section
       aria-label='当前办理'
@@ -168,7 +135,7 @@ export function MatterWork({
           </summary>
           <div className='mt-3 space-y-2 text-sm leading-7'>
             <p>
-              核验任务：{qa.id} · 接收岗位：{roleNames[qa.assignee]}
+              核验任务：{qa!.id} · 接收岗位：{roleNames[qa!.assignee]}
             </p>
             <p>
               申请记录：

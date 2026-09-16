@@ -44,6 +44,7 @@ export function ActionSheet({
   confirm,
   recheck,
   viewMatter,
+  uncertain = false,
 }: {
   preview: Preview | null
   snapshot: Snapshot | null
@@ -55,9 +56,12 @@ export function ActionSheet({
   confirm: () => void
   recheck: () => void
   viewMatter: () => void
+  uncertain?: boolean
 }) {
   const kind = preview?.action.type || ''
-  const [title, confirmLabel] = titles[kind] || ['核对操作', '确认执行']
+  const requestingReview = ['request_quality', 'request_event_review'].includes(kind)
+  const receiver = roleNames[snapshot?.state.scenario?.reviewer || 'quality']
+  const [title, confirmLabel] = requestingReview ? ['核对核验申请', `提交给${receiver}`] : titles[kind] || ['核对操作', '确认执行']
   const stale = !!preview && preview.revision !== snapshot?.state.revision
   const current = snapshot?.analysis.options.find(
     (item) => item.supplierId === 'A'
@@ -81,11 +85,11 @@ export function ActionSheet({
           </SheetDescription>
         </SheetHeader>
         <div className='min-h-0 flex-1 space-y-5 overflow-y-auto px-4 pb-4 text-sm'>
-          {kind === 'request_quality' && (
+          {requestingReview && (
             <>
               <dl className='grid grid-cols-[5rem_1fr] gap-3'>
                 <dt className='text-muted-foreground'>接收岗位</dt>
-                <dd>质量负责人</dd>
+                <dd>{receiver}</dd>
                 <dt className='text-muted-foreground'>核验对象</dt>
                 <dd>
                   {
@@ -95,7 +99,7 @@ export function ActionSheet({
                         snapshot.state.matter.planSelection?.planVersionId
                     )?.title
                   }{' '}
-                  · {snapshot?.state.matter.materialId}
+                  · {snapshot?.state.matter.materialId || snapshot?.state.matter.businessObject}
                 </dd>
                 <dt className='text-muted-foreground'>发起依据</dt>
                 <dd className='leading-6'>
@@ -107,8 +111,9 @@ export function ActionSheet({
                 <dd className='break-words'>{snapshot?.state.matter.planSelection?.planVersionId}</dd>
               </dl>
               <div className='rounded-md bg-muted/40 p-4 leading-7'>
-                提交后由质量负责人接收；你当前这一步完成。当前仍采用{' '}
-                {snapshot?.state.matter.supplierId}，核验通过后仍需业务负责人批准。
+                提交后由{receiver}接收；你当前这一步完成。
+                {!snapshot?.state.scenario && <>当前仍采用 {snapshot?.state.matter.supplierId}。</>}
+                核验通过后仍需业务负责人批准。
               </div>
             </>
           )}
@@ -201,7 +206,7 @@ export function ActionSheet({
               />
             </>
           )}
-          {!['request_quality', 'approve_switch', 'close_matter'].includes(
+          {!['request_quality', 'request_event_review', 'approve_switch', 'close_matter'].includes(
             kind
           ) && (
             <div>
@@ -222,7 +227,7 @@ export function ActionSheet({
             </p>
           )}
           <ErrorNotice message={error} />
-          {stale && (
+          {stale && !uncertain && (
             <p className='text-destructive'>事项已更新，请重新核对后确认。</p>
           )}
           {kind === 'approve_switch' && (
@@ -243,17 +248,17 @@ export function ActionSheet({
           <Button variant='outline' disabled={busy} onClick={close}>
             取消
           </Button>
-          {(stale || !!error || !preview?.allowed) && (
+          {!uncertain && (stale || !!error || !preview?.allowed) && (
             <Button variant='outline' disabled={busy} onClick={recheck}>
               重新检查
             </Button>
           )}
           <Button
-            disabled={busy || !preview?.allowed || stale}
+            disabled={busy || !preview?.allowed || (stale && !uncertain)}
             onClick={confirm}
           >
             {busy && <Loader2 className='size-4 animate-spin' />}
-            {confirmLabel}
+            {busy ? '正在确认…' : uncertain ? '核对提交结果' : confirmLabel}
           </Button>
         </SheetFooter>
       </SheetContent>

@@ -1,3 +1,4 @@
+import { HandlingSummary } from './handling-summary'
 import { ArrowRight, FileSearch, Truck } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -295,6 +296,7 @@ export function Knowledge(props: Props & { refresh: () => Promise<void> }) {
   const { state, presentation } = snapshot
   return (
     <div className='min-w-0 space-y-5'>
+      <HandlingSummary snapshot={snapshot} />
       <section className='rounded-xl border bg-card p-5'>
         <div className='flex flex-wrap items-start justify-between gap-4'>
           <div className='min-w-0'>

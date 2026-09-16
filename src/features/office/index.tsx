@@ -35,6 +35,7 @@ import { officeApi, errorText, getOfficeSnapshot, OfficeError } from './api'
 import { Assistant } from './assistant'
 import { Matter } from './business'
 import { MatterWork } from './matter-work'
+import { matterHandling } from './handling'
 import './office.css'
 import { Home, MatterList } from './overview'
 import { Knowledge } from './knowledge'
@@ -100,6 +101,8 @@ export function OfficeApp() {
   const matterRef = useRef(matterId)
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
   const [retiredMatter, setRetiredMatter] = useState(false)
+  const [dataFresh, setDataFresh] = useState(false)
+  const [confirmUncertain, setConfirmUncertain] = useState(false)
   const [config, setConfig] = useState<ModelConfig | null>(null)
   const [sources, setSources] = useState<Source[]>([])
   const [history, setHistory] = useState<History>({ runs: [], comparisons: [] })
@@ -222,6 +225,7 @@ export function OfficeApp() {
       next = await getOfficeSnapshot(role)
     } catch (failure) {
       if (roleRef.current !== role || matterRef.current !== matterId) throw failure
+      setDataFresh(false)
       if (failure instanceof OfficeError && failure.code === 'MATTER_RETIRED') {
         setRetiredMatter(true)
         setSnapshot(null)
@@ -239,7 +243,10 @@ export function OfficeApp() {
       officeApi<{ documents: Source[] }>('/documents', role),
       officeApi<ModelConfig>('/model', role),
       officeApi<History>('/runs', role),
-    ])
+    ]).catch((failure: unknown) => {
+      if (roleRef.current === role && matterRef.current === matterId) setDataFresh(false)
+      throw failure
+    })
     if (
       roleRef.current !== role ||
       next.state.matter.id !== matterId ||
@@ -247,6 +254,7 @@ export function OfficeApp() {
     )
       return
     setSnapshot(next)
+    setDataFresh(true)
     setRetiredMatter(false)
     setSources(documents.documents)
     setConfig(model)
@@ -352,11 +360,12 @@ export function OfficeApp() {
     expectedVersion?: number,
     receiptKey = ''
   ) {
-    if (operationLock.current) return
+    if (operationLock.current || !dataFresh) return
     operationLock.current = true
     setActionBusy(true)
     setError('')
     setConfirmError('')
+    setConfirmUncertain(false)
     setNotice('')
     try {
       const response = await officeApi<{ preview: Preview }>('/preview', role, {
@@ -374,7 +383,7 @@ export function OfficeApp() {
         if (roleRef.current !== role || matterRef.current !== matterId) return
         setSnapshot(next)
         setNotice('已开始处理。')
-        await refresh()
+        try { await refresh() } catch (failure) { setError(`操作已保存，但暂时无法刷新最新进度：${errorText(failure)}`) }
       } else {
         setPreviewReceiptContext(receiptKey)
         setPreview(response.preview)
@@ -424,14 +433,18 @@ export function OfficeApp() {
       if (roleRef.current !== role || matterRef.current !== matterId) return
       setSnapshot(next)
       setPreview(null)
+      setConfirmUncertain(false)
       setReceiptTask(null)
       setPreviewReceiptContext('')
-      setNotice(preview.action.type === 'request_quality'
-        ? '核验申请已提交。等待质量负责人接收，你当前无需操作。'
+      const handling = matterHandling(next, role)
+      setNotice(['request_quality', 'request_event_review'].includes(preview.action.type) && handling.waitingForReview
+        ? `核验申请已提交。${handling.current}，你当前无需操作。`
         : `已保存。${next.analysis.nextStep}`)
-      await refresh()
+      try { await refresh() } catch (failure) { setError(`操作已保存，但暂时无法刷新最新进度：${errorText(failure)}`) }
     } catch (failure) {
-      setConfirmError(errorText(failure))
+      const uncertain = !(failure instanceof OfficeError) || failure.status >= 500
+      setConfirmUncertain(uncertain)
+      setConfirmError(uncertain ? '暂时无法确认提交结果。请核对提交结果，系统会使用同一提交编号，不会重复办理。' : errorText(failure))
       try {
         await refresh()
       } catch {
@@ -520,7 +533,7 @@ export function OfficeApp() {
   )!
   const businessProps = {
     role,
-    busy: actionBusy || loading,
+    busy: actionBusy || loading || !dataFresh,
     sources,
     propose: (action: Action) => void propose(action, snapshot?.state.revision),
     openSource,
@@ -657,6 +670,7 @@ export function OfficeApp() {
           </Button>
         </div>
         <ErrorNotice message={error} />
+        {snapshot && !dataFresh && !loading && <p role='alert' className='rounded-lg border p-3 text-sm'>暂时无法确认最新进度，已暂停办理。请点击“刷新数据”后继续；下方为上次读取的记录。</p>}
         {retiredMatter && <div className='space-y-3 rounded-xl border bg-card p-5'><p>演示已调整为每种业务类型一个代表事项。此旧入口不再参与办理，原记录保留。</p><Button onClick={() => { setError(''); setRetiredMatter(false); navigate('matter-detail', matterId === 'SUP-010' ? 'SUP-007' : 'SUP-001') }}>打开代表事项</Button></div>}
         {notice && (
           <div
@@ -718,7 +732,7 @@ export function OfficeApp() {
                 }}
                 giveReceipt={giveReceipt}
                 viewMatter={() => navigate('matter-detail')}
-                actionBusy={actionBusy || loading}
+                actionBusy={actionBusy || loading || !dataFresh}
               />
             )}
           </div>
@@ -750,6 +764,7 @@ export function OfficeApp() {
         snapshot={snapshot}
         busy={actionBusy}
         error={confirmError}
+        uncertain={confirmUncertain}
         sources={sources}
         openSource={openSource}
         close={() => {

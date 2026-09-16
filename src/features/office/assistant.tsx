@@ -47,6 +47,7 @@ import {
 } from './types'
 import { useHistoryLayout } from './use-history-layout'
 import { SemanticBasis } from './knowledge'
+import { HandlingSummary } from './handling-summary'
 
 const briefingQuestion = '这次延期影响什么，我现在需要作什么决定？'
 const prompts = [
@@ -944,6 +945,7 @@ export function Assistant(props: Props) {
             查看事项详情
           </Button>
         </div>
+        <div className='shrink-0 px-3 py-2'><HandlingSummary snapshot={snapshot} /></div>
         <div
           className='office-chat-messages'
           ref={scroll}
@@ -957,7 +959,7 @@ export function Assistant(props: Props) {
         >
           {!messages.length && (
             <div className='py-6'>
-              <h3 className='text-xl font-semibold'>从一个问题开始办理</h3>
+              <h3 className='text-xl font-semibold'>先了解影响与依据</h3>
               <p className='mt-3 text-sm leading-7 text-muted-foreground'>
                 {state.scenario
                   ? state.scenario.trigger

@@ -1,0 +1,182 @@
+{
+  "at": "2026-09-16T07:14:29.217Z",
+  "base": "http://127.0.0.1:5198",
+  "checks": [
+    "首页四种类型各一例，待办/跟进/分类计数一致",
+    "事项搜索/筛选四条代表事项，旧链接可恢复且不办理隐藏事项",
+    "M-01保留配套导入、两条订单、A/B与来源；真实模型查询影响",
+    "事项中准备核验、取消不提交、最终提交后发起人明确完成",
+    "显式切换质量岗位、接收、开始、提交核验，尚未批准仍用A",
+    "负责人批准与发送分开，采购/销售独立回执，复核关闭",
+    "办理后计数更新；所有代表案例、窄屏与岗位均可访问"
+  ],
+  "errors": [],
+  "queryRuns": [
+    {
+      "question": "筛选当前有到料风险且至少晚 2 天的订单，统计数量并引用导入记录；不要执行修改。",
+      "answer": "筛选结果：当前采用供应商 A 下，同时满足“有到料风险”且“预计至少晚 2 天”的订单共 1 条，即 ORD-001-01；ORD-001-02 虽有到料风险，但预计仅晚 1 天，未入选。\n\n影响：ORD-001-01（物料 M-01）最晚到料 D5，A 预计 D9 到料，预计晚 4 天，属到料延期风险；该延期不等于成品交付已延期，也不构成违约结论。ORD-001-02 最晚到料 D8，预计 D9 到料，预计晚 1 天。\n\n依据：筛选与延误天数由订单筛选程序按当前版本计算，当前生效供应商仍为 A（DEC-01 有效，DEC-02 仅为有条件建议，未获批准切换）；本次导入记录显示供应商 A 预计到料由 D6 变为 D9，有到料风险订单数由 1 条增至 2 条 [DOC-IMPORT-CHANGE-V2]，与台账、状态一致 [DOC-LEDGER][DOC-STATE]。订单行导入记录：[DOC-IMPORT-ORDER-R2-69973A89D474]、[DOC-IMPORT-ORDER-R3-69973A89D474]。\n\n缺失条件：尚无实际到货凭证，无法确认是否到货。\n\n本次仅做筛选统计，未执行任何修改；如需推进，可先比较 A/B 方案并选择具体版本后由质量岗位核验、负责人批准。",
+      "revision": 2,
+      "supplyQuery": {
+        "revision": 2,
+        "dataKind": "synthetic",
+        "status": "ready",
+        "filters": {
+          "atRisk": true,
+          "minLateDays": 2
+        },
+        "supplierId": "A",
+        "totalCount": 2,
+        "matchedCount": 1,
+        "conditions": [
+          {
+            "key": "atRisk",
+            "label": "存在到料风险"
+          },
+          {
+            "key": "minLateDays",
+            "label": "预计至少晚 2 天"
+          }
+        ],
+        "evaluations": [
+          {
+            "id": "ORD-001-01",
+            "requiredDay": 5,
+            "materialId": "M-01",
+            "arrivalDay": 9,
+            "lateDays": 4,
+            "atRisk": true,
+            "revision": 2,
+            "matched": true,
+            "checks": [
+              {
+                "key": "atRisk",
+                "label": "存在到料风险",
+                "actual": "存在到料风险",
+                "passed": true
+              },
+              {
+                "key": "minLateDays",
+                "label": "预计至少晚 2 天",
+                "actual": "预计晚 4 天",
+                "passed": true
+              }
+            ],
+            "sourceIds": [
+              "DOC-LEDGER",
+              "DOC-IMPORT-ORDER-R2-69973A89D474",
+              "DOC-IMPORT-CHANGE-V2",
+              "DOC-STATE",
+              "DOC-IMPORT-SUPPLIER-A-91EBC165F83D"
+            ]
+          },
+          {
+            "id": "ORD-001-02",
+            "requiredDay": 8,
+            "materialId": "M-01",
+            "arrivalDay": 9,
+            "lateDays": 1,
+            "atRisk": true,
+            "revision": 2,
+            "matched": false,
+            "checks": [
+              {
+                "key": "atRisk",
+                "label": "存在到料风险",
+                "actual": "存在到料风险",
+                "passed": true
+              },
+              {
+                "key": "minLateDays",
+                "label": "预计至少晚 2 天",
+                "actual": "预计晚 1 天",
+                "passed": false
+              }
+            ],
+            "sourceIds": [
+              "DOC-LEDGER",
+              "DOC-IMPORT-ORDER-R3-69973A89D474",
+              "DOC-IMPORT-CHANGE-V2",
+              "DOC-STATE",
+              "DOC-IMPORT-SUPPLIER-A-91EBC165F83D"
+            ]
+          }
+        ],
+        "maxLateDays": 4,
+        "formula": "延误天数 = max(0, 当前采用供应商预计到料日 - 订单最晚到料日)；预计到料日 > 最晚到料日才计为到料风险。",
+        "records": [
+          {
+            "id": "ORD-001-01",
+            "requiredDay": 5,
+            "materialId": "M-01",
+            "arrivalDay": 9,
+            "lateDays": 4,
+            "atRisk": true,
+            "revision": 2,
+            "matched": true,
+            "checks": [
+              {
+                "key": "atRisk",
+                "label": "存在到料风险",
+                "actual": "存在到料风险",
+                "passed": true
+              },
+              {
+                "key": "minLateDays",
+                "label": "预计至少晚 2 天",
+                "actual": "预计晚 4 天",
+                "passed": true
+              }
+            ],
+            "sourceIds": [
+              "DOC-LEDGER",
+              "DOC-IMPORT-ORDER-R2-69973A89D474",
+              "DOC-IMPORT-CHANGE-V2",
+              "DOC-STATE",
+              "DOC-IMPORT-SUPPLIER-A-91EBC165F83D"
+            ]
+          }
+        ],
+        "message": "已按明确条件筛选当前事项订单。",
+        "sources": [
+          {
+            "id": "DOC-LEDGER",
+            "title": "采购与订单台账样例",
+            "text": "[DOC-LEDGER] SUP-001 关联物料 M-01。ORD-001-01 最迟 D5 到料；ORD-001-02 最迟 D8 到料。A 当前 D9，B 当前 D4。当前方案为 A；关联 2 单，2 单有到料风险。旧供应商 B 资格记录为 pending，不代表所选方案版本审核结果。",
+            "source": "合成样例 · 独立演示后台"
+          },
+          {
+            "id": "DOC-STATE",
+            "title": "事项当前状态与回执",
+            "text": "[DOC-STATE] 当前数据版本 2；事项 SUP-001 状态 open，当前生效供应商 A。选择意向：尚未记录。跟进批准：尚未批准。决定：DEC-01=effective（已批准由供应商 A 供应 M-01；在新的切换决定批准前继续有效。）；DEC-02=conditional（提出备选供应商 B；仅在质量核验通过且业务负责人明确批准后切换。此记录不构成切换批准。）。任务：尚未创建。下一步：请比较并选择 A/B 方案，补充理由可选。",
+            "source": "合成样例 · 独立演示后台"
+          },
+          {
+            "id": "DOC-IMPORT-SUPPLIER-A-91EBC165F83D",
+            "title": "Supplier.csv · 第 2 行 · A",
+            "text": "合成样例；文件 Supplier.csv；第 2 行；快照 delayed；SHA-256 91ebc165f83da2039dd46f91d1c6d3348757e209af059e7a001b40acf198a3e9。\n仅映射 供应商编号、预计到料日。风险、延误天数、当前采用、审批和版本字段均不导入，由当前业务状态重新计算。\n原始表头：\n\"row_key\",\"snapshot_id\",\"object_id\",\"display_name\",\"source_keys_json\",\"p_arrivalDay\",\"p_eligible\",\"p_id\",\"p_name\",\"p_originalDay\",\"p_quality\",\"p_qualityLabel\",\"p_revision\",\"p_riskCount\",\"p_selected\"\n原始记录：\n\"delayed/Supplier:A\",\"delayed\",\"Supplier:A\",\"供应商 A\",\"[\"\"delayed/Document:DOC-LEDGER\"\",\"\"delayed/Document:DOC-STATE\"\"]\",\"9\",\"false\",\"A\",\"供应商 A\",\"3\",\"approved\",\"通过\",\"2\",\"2\",\"true\"",
+            "source": "用户导入的合成样例 · 非客户生产数据"
+          },
+          {
+            "id": "DOC-IMPORT-ORDER-R2-69973A89D474",
+            "title": "Order.csv · 第 2 行 · ORD-001-01",
+            "text": "合成样例；文件 Order.csv；第 2 行；快照 delayed；SHA-256 69973a89d474a980b5ea29ebf99e1572c6509db6605d068955fc222a5ec5d024。\n仅映射 订单编号、物料编号、最晚到料日。风险、延误天数、当前采用、审批和版本字段均不导入，由当前业务状态重新计算。\n原始表头：\n\"row_key\",\"snapshot_id\",\"object_id\",\"display_name\",\"source_keys_json\",\"p_arrivalDay\",\"p_atRisk\",\"p_id\",\"p_lateDays\",\"p_materialId\",\"p_requiredDay\",\"p_revision\"\n原始记录：\n\"delayed/Order:ORD-001-01\",\"delayed\",\"Order:ORD-001-01\",\"ORD-001-01\",\"[\"\"delayed/Document:DOC-LEDGER\"\"]\",\"9\",\"true\",\"ORD-001-01\",\"4\",\"M-01\",\"5\",\"2\"",
+            "source": "用户导入的合成样例 · 非客户生产数据"
+          },
+          {
+            "id": "DOC-IMPORT-ORDER-R3-69973A89D474",
+            "title": "Order.csv · 第 3 行 · ORD-001-02",
+            "text": "合成样例；文件 Order.csv；第 3 行；快照 delayed；SHA-256 69973a89d474a980b5ea29ebf99e1572c6509db6605d068955fc222a5ec5d024。\n仅映射 订单编号、物料编号、最晚到料日。风险、延误天数、当前采用、审批和版本字段均不导入，由当前业务状态重新计算。\n原始表头：\n\"row_key\",\"snapshot_id\",\"object_id\",\"display_name\",\"source_keys_json\",\"p_arrivalDay\",\"p_atRisk\",\"p_id\",\"p_lateDays\",\"p_materialId\",\"p_requiredDay\",\"p_revision\"\n原始记录：\n\"delayed/Order:ORD-001-02\",\"delayed\",\"Order:ORD-001-02\",\"ORD-001-02\",\"[\"\"delayed/Document:DOC-LEDGER\"\"]\",\"9\",\"true\",\"ORD-001-02\",\"1\",\"M-01\",\"8\",\"2\"",
+            "source": "用户导入的合成样例 · 非客户生产数据"
+          },
+          {
+            "id": "DOC-IMPORT-CHANGE-V2",
+            "title": "本次导入前后影响对照",
+            "source": "合成样例 · 独立演示后台",
+            "text": "合成样例导入；版本 1 → 2；导入时间 2026-09-16T07:13:59.346Z。以下是程序在导入时计算的前后对照，并非客户生产数据。\n供应商 A：预计到料 D6 → D9。\n供应商 B：预计到料 D4 → D4。\n订单 ORD-001-01：最晚到料 D5 → D5。\n订单 ORD-001-02：最晚到料 D8 → D8。\n到料风险订单数：导入前 1 条 → 导入后 2 条。\nORD-001-01：导入前预计晚 1 天 → 导入后预计晚 4 天。\nORD-001-02：导入前预计晚 0 天 → 导入后预计晚 1 天。\n仅更新日期，当前采用的供应商、决定与办理任务不变。后续修改以当前数据为准。"
+          }
+        ]
+      },
+      "mode": "live"
+    }
+  ]
+}
